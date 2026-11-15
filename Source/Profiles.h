@@ -147,7 +147,7 @@ inline GenreProfile buildProfile (const juce::String& id, const juce::String& na
 {
     GenreProfile g;
     g.id = id; g.name = name; g.tracks = (int) tracks.size(); g.source = "references";
-    const double n = (double) juce::jmax<size_t> (1, tracks.size());
+    const double n = (double) std::max<size_t> (1, tracks.size());
     for (int f = 0; f < numFeatures; ++f)
     {
         double m = 0;

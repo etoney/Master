@@ -302,7 +302,7 @@ void Vitals::paint (juce::Graphics& g)
     g.setColour (pal::screen); g.fillRoundedRectangle (r, 4.0f);
     g.setColour (juce::Colour (0xff3a2418)); g.drawRoundedRectangle (r.reduced (0.5f), 4.0f, 1.0f);
     r = r.reduced (10, 6);
-    const float rh = r.getHeight() / (float) juce::jmax<size_t> (1, rows.size());
+    const float rh = r.getHeight() / (float) std::max<size_t> (1, rows.size());
     for (auto& row : rows)
     {
         auto line = r.removeFromTop (rh);
