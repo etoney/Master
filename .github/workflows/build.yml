@@ -1,0 +1,89 @@
+name: Build The Master
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfreetype6-dev libfontconfig1-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxcomposite-dev libxrender-dev libxext-dev
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DTHEMASTER_TESTS_ONLY=ON
+      - name: Build checks
+        run: cmake --build build --config Release --target TheMasterSnapshot TheMasterProfiler -j4
+      - name: Run analyser + profile + advice checks, render GUI
+        run: mkdir -p snapshots && ./build/TheMasterSnapshot_artefacts/Release/TheMasterSnapshot snapshots
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gui-snapshots
+          path: snapshots/*.png
+
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build --config Release --target TheMaster_VST3 TheMaster_Standalone TheMasterProfiler
+      - name: Build AU (macOS)
+        if: runner.os == 'macOS'
+        run: cmake --build build --config Release --target TheMaster_AU
+      - name: Package release zip (same layout as the site downloads)
+        shell: bash
+        run: |
+          VER=$(sed -n 's/^project(THEMASTER VERSION \([0-9.]*\)).*/\1/p' CMakeLists.txt)
+          OS=$([ "$RUNNER_OS" = "macOS" ] && echo macOS || echo Windows)
+          ZIP="TheMaster-v${VER}-${OS}.zip"
+          R=build/TheMaster_artefacts/Release
+          mkdir -p pkg/TheMaster/VST3 pkg/TheMaster/Standalone
+          cp readme.txt controls.txt LICENSE.txt THIRD-PARTY-NOTICES.txt pkg/TheMaster/
+          cp -R "$R/VST3/The Master.vst3" pkg/TheMaster/VST3/
+          if [ "$OS" = "macOS" ]; then
+            mkdir -p pkg/TheMaster/AU && cp -R "$R/AU/The Master.component" pkg/TheMaster/AU/
+            cp -R "$R/Standalone/The Master.app" pkg/TheMaster/Standalone/
+            (cd pkg && ditto -c -k --sequesterRsrc --keepParent TheMaster "../$ZIP")
+          else
+            cp "$R/Standalone/The Master.exe" pkg/TheMaster/Standalone/
+            (cd pkg && 7z a -tzip -mx=9 "../$ZIP" TheMaster > /dev/null)   # 7z writes forward-slash paths
+          fi
+          ls -la "$ZIP"
+          BR="downloads-$(echo $OS | tr 'A-Z' 'a-z')"
+          mkdir -p /tmp/dl && cp "$ZIP" /tmp/dl/ && cd /tmp/dl && git init -q -b "$BR" && git add -A
+          git -c user.name=ci -c user.email=ci@users.noreply.github.com commit -qm "$ZIP for ${GITHUB_SHA}"
+          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" "$BR"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TheMaster-${{ runner.os }}
+          path: |
+            readme.txt
+            controls.txt
+            LICENSE.txt
+            THIRD-PARTY-NOTICES.txt
+            build/TheMaster_artefacts/Release/VST3
+            build/TheMaster_artefacts/Release/AU
+            build/TheMaster_artefacts/Release/Standalone
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TheMasterProfiler-${{ runner.os }}
+          path: |
+            ADMIN.txt
+            Profiles/factory.json
+            build/TheMasterProfiler_artefacts/Release/TheMasterProfiler*

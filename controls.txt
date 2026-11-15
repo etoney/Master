@@ -1,0 +1,107 @@
+===============================================================================
+  THE MASTER  //  QUICK GUIDE
+  Castle Danger Music Company
+===============================================================================
+
+The Master listens to your finished mix, compares it with how records in your
+genre usually measure, and tells you what to fix, in plain English. Where one
+of our plugins does the job (Dominatrix, Chop Shop, Flatliner, BuzzKill) it
+tells you which one and how to set it.
+
+It never changes your audio. It passes straight through with zero latency, so
+it can stay on while you work.
+
+
+-------------------------------------------------------------------------------
+HOW TO USE IT
+-------------------------------------------------------------------------------
+  1. Put The Master LAST on your master channel, after your limiter or
+     Dominatrix, so it hears exactly what you'll export.
+  2. Press RESET, then play the whole song (or at least 30 seconds of the
+     loudest chorus). An offline bounce/export works too: every sample is
+     analysed even when the bounce runs faster than real time.
+  3. Read THE VERDICT. Fix the red items first, then the yellow ones.
+  4. Change something, press RESET and play it again.
+
+The report is saved with your project. When you reopen the project you'll see
+the last report until you play the song again.
+
+
+-------------------------------------------------------------------------------
+ANALYSIS (top right)
+-------------------------------------------------------------------------------
+  LISTEN    On: everything that plays is analysed. Off: the report freezes.
+            You can automate LISTEN to analyse only one part of the song.
+  RESET     Forget what's been heard and start a new analysis.
+  PROFILES  Import an updated genre profile pack, open the profiles folder,
+            or go back to the factory profiles.
+
+
+-------------------------------------------------------------------------------
+REFERENCE GENRE
+-------------------------------------------------------------------------------
+  AUTO      The Master works out which genre your mix sounds closest to and
+            compares against that. The yellow lamp marks the match.
+  ROCK / METAL / PUNK / HARD ROCK / POP
+            Lock the comparison to one genre (it's saved with the project).
+
+  SOUNDS LIKE shows the closest genre and how sure it is, plus the runner-up.
+  Rock, hard rock and punk are close cousins, so a split like 45% / 35% is
+  normal. If AUTO picks the wrong one, just choose your genre.
+
+
+-------------------------------------------------------------------------------
+TONAL BALANCE
+-------------------------------------------------------------------------------
+  Ten bands from SUB (20-60 Hz) to AIR (12-20 kHz). The middle line is the
+  average record in the genre; the dark band is where most records sit and
+  the faint band is the outer edge. Your mix is the line of dots:
+    cream    in range
+    yellow   worth checking
+    red      clearly off
+  The number is how many dB your mix has more (+) or less (-) of that band
+  than the typical record. Bands move together: if one band is way too loud,
+  the others look a little low. Fix the biggest one first.
+
+
+-------------------------------------------------------------------------------
+VITALS
+-------------------------------------------------------------------------------
+  LOUDNESS        Integrated loudness of the whole song (LUFS).
+  TRUE PEAK       Highest peak, including peaks between samples. Streaming
+                  services ask for -1 dBTP or lower (red line).
+  PUNCH (PLR)     Peak-to-loudness ratio: how far peaks stick out above the
+                  average level. Low = squashed, high = spiky.
+  LOUDNESS RANGE  How much the level changes between sections (LU).
+  STEREO WIDTH    How loud the sides are compared with the centre.
+  MONO LOW END    Below 120 Hz, how alike left and right are (1.00 = mono,
+                  which is what you want for kick and bass).
+
+
+-------------------------------------------------------------------------------
+THE VERDICT
+-------------------------------------------------------------------------------
+  The MIX SCORE (0-100) is how closely your mix matches the genre plus the
+  technical basics (peaks, clipping, phase, hum). It's a guide, not a
+  grade: a deliberate choice can be "off" and still be right for the song.
+
+    red     FIX: a real problem (clipping, out-of-phase, way off the genre)
+    yellow  CHECK: noticeably different from the genre; listen and decide
+    green   GOOD: in range
+
+  COPY puts the whole report on your clipboard.
+
+  What The Master looks for:
+    loudness for the genre, true peaks, digital clipping, over-compression
+    or spiky peaks, big level swings, stereo width and phase, stereo bass,
+    each of the ten tonal bands, and 50/60 Hz hum in the quiet parts.
+
+
+-------------------------------------------------------------------------------
+GENRE PROFILES
+-------------------------------------------------------------------------------
+  The genres are profiles: what records in each genre measure, built from
+  reference songs. Updated profile packs may be posted on
+  castledangermusic.com. To install one: PROFILES > Import profile pack...
+  and pick the .json file. Every copy of The Master on your computer uses
+  it. PROFILES > Restore factory profiles undoes it.

@@ -1,0 +1,106 @@
+===============================================================================
+  THE MASTER  //  ADMIN GUIDE: UPDATING THE GENRE PROFILES
+  Castle Danger Music Company (internal, not shipped to users)
+===============================================================================
+
+A genre profile is the average and spread of everything The Master measures
+(loudness, PLR, loudness range, width, correlation, and the 10 tonal bands)
+across reference songs in that genre. The comparison, the AUTO genre
+detection and the score all come from these profiles. Better references mean
+better advice.
+
+IMPORTANT: the factory profiles in version 1.0 are SEED ESTIMATES (typical
+commercial master values), not measurements of real songs. Replace them with
+real references before relying on the advice. 20-50 songs per genre is good.
+
+The profiles never ship anyone's audio: only the numbers are stored.
+
+
+-------------------------------------------------------------------------------
+THREE WAYS TO UPDATE PROFILES
+-------------------------------------------------------------------------------
+
+A) IN BULK WITH TheMasterProfiler (best)
+   The GitHub build makes TheMasterProfiler for macOS and Windows. Download
+   the "TheMasterProfiler-<OS>" artifact from the latest Actions run.
+
+   1. Make a folder with one sub-folder per genre. The sub-folder name is the
+      genre name the users will see:
+
+          References/
+            Rock/        song1.wav  song2.flac  ...
+            Metal/       ...
+            Punk/        ...
+            Hard Rock/   ...
+            Pop/         ...
+            Country/     (a new genre: just add a folder)
+
+      Use mastered, released-quality files: WAV, AIFF, FLAC, OGG or MP3
+      (also M4A/AAC on macOS). Lossless is best.
+
+   2. Build the pack:
+
+          TheMasterProfiler build References profiles.json --version 2026.12.01
+
+      To update only some genres and keep the rest from the current pack:
+
+          TheMasterProfiler build References profiles.json --merge factory
+          TheMasterProfiler build References profiles.json --merge old-pack.json
+
+      It prints every song's loudness and PLR as it goes, and writes
+      profiles.tracks.csv with every song's numbers. Open it in a
+      spreadsheet and look for odd ones out (a live recording, a remaster
+      at a very different loudness, a song in the wrong folder).
+
+   3. Check a song against the new pack:
+
+          TheMasterProfiler check profiles.json "some mix.wav"
+          TheMasterProfiler analyze "some song.wav"
+
+B) CAPTURE REFERENCES INSIDE YOUR DAW
+   Handy for adding a few songs at a time.
+   1. Put The Master on the master channel. Load a reference song onto a
+      track (bypass anything on the master bus before The Master).
+   2. Press RESET and play the whole song (or bounce it offline).
+   3. Hold SHIFT and click PROFILES. Under ADMIN choose
+      "Add this analysis as a reference song for" > the genre.
+   4. RESET, next song, repeat.
+   Captured songs go into your user pack (see PROFILES > Open profiles
+   folder). A factory seed counts as 5 songs, so after a dozen or so real
+   references the seed hardly matters any more.
+   SHIFT + PROFILES also has "Export profile pack..." and "Copy analysis
+   numbers (JSON)".
+
+C) EDIT THE JSON BY HAND
+   Profiles/factory.json is plain text. Each genre has an id, a name and
+   "mean" + "sd" for every measurement. Fine for small tweaks, for example
+   widening an "sd" so The Master is less picky about one band.
+
+
+-------------------------------------------------------------------------------
+GETTING NEW PROFILES TO USERS
+-------------------------------------------------------------------------------
+  * NEXT RELEASE: replace Profiles/factory.json in the GitHub repo with the
+    new pack (keep the name factory.json) and push. GitHub Actions builds a
+    new version with the profiles compiled in. Bump the version in
+    CMakeLists.txt when you do.
+  * BETWEEN RELEASES: upload the pack (.json) to castledangermusic.com.
+    Users install it with PROFILES > Import profile pack... Imported packs
+    replace any earlier imported pack, and override factory genres with the
+    same id. New genres (like Country) appear as new buttons.
+
+
+-------------------------------------------------------------------------------
+WHERE THINGS LIVE
+-------------------------------------------------------------------------------
+  User pack (imported or captured):
+    macOS    ~/Library/Application Support/Castle Danger/The Master/Profiles/profiles.json
+    Windows  %APPDATA%\Castle Danger\The Master\Profiles\profiles.json
+
+  Genre ids: rock, metal, punk, hardRock, pop. Keep ids the same when you
+  update a genre so projects saved with a locked genre still find it.
+
+  A pack records the analyser version. If a future update changes how
+  The Master measures (analyzerVersion goes up), rebuild the packs with the
+  matching TheMasterProfiler. Older plugins refuse packs from newer
+  analysers.

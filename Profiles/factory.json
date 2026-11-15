@@ -1,0 +1,369 @@
+{
+  "format": "the-master-profiles",
+  "formatVersion": 1,
+  "analyzerVersion": 1,
+  "packVersion": "2026.11.15-seed",
+  "notes": "Seed estimates of commercial masters per genre. Rebuild with TheMasterProfiler from real reference songs (see ADMIN.txt).",
+  "genres": [
+    {
+      "id": "rock",
+      "name": "Rock",
+      "tracks": 0,
+      "source": "seed",
+      "features": {
+        "lufs": {
+          "mean": -8.5,
+          "sd": 1.5
+        },
+        "plr": {
+          "mean": 9.0,
+          "sd": 1.5
+        },
+        "lra": {
+          "mean": 6.0,
+          "sd": 2.0
+        },
+        "width": {
+          "mean": -10.0,
+          "sd": 3.0
+        },
+        "correlation": {
+          "mean": 0.8,
+          "sd": 0.1
+        },
+        "lowCorrelation": {
+          "mean": 0.95,
+          "sd": 0.04
+        },
+        "sub": {
+          "mean": -6.29,
+          "sd": 2.5
+        },
+        "bass": {
+          "mean": -4.79,
+          "sd": 2.5
+        },
+        "low": {
+          "mean": -6.79,
+          "sd": 2.5
+        },
+        "lowMid": {
+          "mean": -9.79,
+          "sd": 2.5
+        },
+        "mid": {
+          "mean": -12.29,
+          "sd": 2.5
+        },
+        "upperMid": {
+          "mean": -14.79,
+          "sd": 2.5
+        },
+        "presence": {
+          "mean": -17.79,
+          "sd": 2.5
+        },
+        "bite": {
+          "mean": -21.29,
+          "sd": 2.5
+        },
+        "sheen": {
+          "mean": -27.79,
+          "sd": 2.5
+        },
+        "air": {
+          "mean": -33.29,
+          "sd": 2.5
+        }
+      }
+    },
+    {
+      "id": "metal",
+      "name": "Metal",
+      "tracks": 0,
+      "source": "seed",
+      "features": {
+        "lufs": {
+          "mean": -7.5,
+          "sd": 1.5
+        },
+        "plr": {
+          "mean": 7.5,
+          "sd": 1.5
+        },
+        "lra": {
+          "mean": 4.5,
+          "sd": 2.0
+        },
+        "width": {
+          "mean": -9.0,
+          "sd": 3.0
+        },
+        "correlation": {
+          "mean": 0.75,
+          "sd": 0.1
+        },
+        "lowCorrelation": {
+          "mean": 0.95,
+          "sd": 0.04
+        },
+        "sub": {
+          "mean": -5.99,
+          "sd": 2.5
+        },
+        "bass": {
+          "mean": -5.19,
+          "sd": 2.5
+        },
+        "low": {
+          "mean": -6.49,
+          "sd": 2.5
+        },
+        "lowMid": {
+          "mean": -9.99,
+          "sd": 2.5
+        },
+        "mid": {
+          "mean": -12.99,
+          "sd": 2.5
+        },
+        "upperMid": {
+          "mean": -14.49,
+          "sd": 2.5
+        },
+        "presence": {
+          "mean": -16.49,
+          "sd": 2.5
+        },
+        "bite": {
+          "mean": -19.99,
+          "sd": 2.5
+        },
+        "sheen": {
+          "mean": -26.49,
+          "sd": 2.5
+        },
+        "air": {
+          "mean": -31.99,
+          "sd": 2.5
+        }
+      }
+    },
+    {
+      "id": "punk",
+      "name": "Punk",
+      "tracks": 0,
+      "source": "seed",
+      "features": {
+        "lufs": {
+          "mean": -8.0,
+          "sd": 1.5
+        },
+        "plr": {
+          "mean": 8.5,
+          "sd": 1.5
+        },
+        "lra": {
+          "mean": 5.0,
+          "sd": 2.0
+        },
+        "width": {
+          "mean": -11.0,
+          "sd": 3.0
+        },
+        "correlation": {
+          "mean": 0.82,
+          "sd": 0.1
+        },
+        "lowCorrelation": {
+          "mean": 0.95,
+          "sd": 0.04
+        },
+        "sub": {
+          "mean": -7.28,
+          "sd": 2.5
+        },
+        "bass": {
+          "mean": -5.28,
+          "sd": 2.5
+        },
+        "low": {
+          "mean": -6.28,
+          "sd": 2.5
+        },
+        "lowMid": {
+          "mean": -8.78,
+          "sd": 2.5
+        },
+        "mid": {
+          "mean": -11.28,
+          "sd": 2.5
+        },
+        "upperMid": {
+          "mean": -13.78,
+          "sd": 2.5
+        },
+        "presence": {
+          "mean": -16.78,
+          "sd": 2.5
+        },
+        "bite": {
+          "mean": -20.78,
+          "sd": 2.5
+        },
+        "sheen": {
+          "mean": -27.28,
+          "sd": 2.5
+        },
+        "air": {
+          "mean": -33.28,
+          "sd": 2.5
+        }
+      }
+    },
+    {
+      "id": "hardRock",
+      "name": "Hard Rock",
+      "tracks": 0,
+      "source": "seed",
+      "features": {
+        "lufs": {
+          "mean": -8.0,
+          "sd": 1.5
+        },
+        "plr": {
+          "mean": 8.5,
+          "sd": 1.5
+        },
+        "lra": {
+          "mean": 5.5,
+          "sd": 2.0
+        },
+        "width": {
+          "mean": -9.5,
+          "sd": 3.0
+        },
+        "correlation": {
+          "mean": 0.78,
+          "sd": 0.1
+        },
+        "lowCorrelation": {
+          "mean": 0.95,
+          "sd": 0.04
+        },
+        "sub": {
+          "mean": -6.44,
+          "sd": 2.5
+        },
+        "bass": {
+          "mean": -4.74,
+          "sd": 2.5
+        },
+        "low": {
+          "mean": -6.74,
+          "sd": 2.5
+        },
+        "lowMid": {
+          "mean": -9.94,
+          "sd": 2.5
+        },
+        "mid": {
+          "mean": -12.44,
+          "sd": 2.5
+        },
+        "upperMid": {
+          "mean": -14.44,
+          "sd": 2.5
+        },
+        "presence": {
+          "mean": -16.94,
+          "sd": 2.5
+        },
+        "bite": {
+          "mean": -20.94,
+          "sd": 2.5
+        },
+        "sheen": {
+          "mean": -27.44,
+          "sd": 2.5
+        },
+        "air": {
+          "mean": -32.94,
+          "sd": 2.5
+        }
+      }
+    },
+    {
+      "id": "pop",
+      "name": "Pop",
+      "tracks": 0,
+      "source": "seed",
+      "features": {
+        "lufs": {
+          "mean": -8.0,
+          "sd": 1.5
+        },
+        "plr": {
+          "mean": 8.5,
+          "sd": 1.5
+        },
+        "lra": {
+          "mean": 5.5,
+          "sd": 2.0
+        },
+        "width": {
+          "mean": -9.0,
+          "sd": 3.0
+        },
+        "correlation": {
+          "mean": 0.75,
+          "sd": 0.1
+        },
+        "lowCorrelation": {
+          "mean": 0.95,
+          "sd": 0.04
+        },
+        "sub": {
+          "mean": -4.45,
+          "sd": 2.5
+        },
+        "bass": {
+          "mean": -4.75,
+          "sd": 2.5
+        },
+        "low": {
+          "mean": -8.25,
+          "sd": 2.5
+        },
+        "lowMid": {
+          "mean": -11.45,
+          "sd": 2.5
+        },
+        "mid": {
+          "mean": -13.95,
+          "sd": 2.5
+        },
+        "upperMid": {
+          "mean": -16.45,
+          "sd": 2.5
+        },
+        "presence": {
+          "mean": -18.95,
+          "sd": 2.5
+        },
+        "bite": {
+          "mean": -21.95,
+          "sd": 2.5
+        },
+        "sheen": {
+          "mean": -27.45,
+          "sd": 2.5
+        },
+        "air": {
+          "mean": -31.95,
+          "sd": 2.5
+        }
+      }
+    }
+  ]
+}
