@@ -551,9 +551,10 @@ void FixInfo::paint (juce::Graphics& g)
         auto a = k == 0 ? bA : aA;
         const int sc = k == 0 ? before : after;
         g.setColour (pal::paintDim); g.setFont (tex::plainBold (9.0f).withExtraKerningFactor (0.1f));
-        g.drawText (k == 0 ? "YOUR MIX" : "AFTER FIXES", a.removeFromTop (12).toNearestInt(), juce::Justification::centred);
+        g.drawText (k == 0 ? "MIX SCORE: YOURS" : "AFTER FIXES", a.removeFromTop (12).toNearestInt(), juce::Justification::centred);
         g.setColour (scoreCol (sc)); g.setFont (tex::stencil (36.0f));
         g.drawText (sc >= 0 ? juce::String (sc) : juce::String ("--"), a.toNearestInt(), juce::Justification::centred);
+        if (sc >= 0) { g.setColour (pal::paintDim); g.setFont (tex::stencil (11.0f)); g.drawText ("/100", a.withTrimmedLeft (a.getWidth() * 0.68f).withTrimmedTop (a.getHeight() * 0.45f).toNearestInt(), juce::Justification::centredLeft); }
     }
     g.setColour (pal::paintDim); g.setFont (tex::stencil (22.0f));
     g.drawText (">", juce::Rectangle<float> (bA.getRight() - 10, bA.getY() + 12, 20, 40).toNearestInt(), juce::Justification::centred);
@@ -608,9 +609,9 @@ void SoundsLike::paint (juce::Graphics& g)
     g.setColour (juce::Colour (0xff1e1612)); g.fillRoundedRectangle (bar, 2.0f);
     g.setColour (pal::hazard.withAlpha (0.85f)); g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * juce::jlimit (0.03f, 1.0f, p1)), 2.0f);
     g.setColour (pal::paint); g.setFont (ledFont (11.0f));
-    g.drawText (juce::String (juce::roundToInt (p1 * 100.0f)) + "%", top.withTrimmedBottom (top.getHeight() * 0.55f).toNearestInt(), juce::Justification::topRight);
+    g.drawText (juce::String (juce::roundToInt (p1 * 100.0f)) + "% SURE", top.withTrimmedBottom (top.getHeight() * 0.55f).toNearestInt(), juce::Justification::topRight);
     g.setColour (pal::paintDim); g.setFont (ledFont (11.5f));
-    juce::String line = second.isNotEmpty() ? "NEXT CLOSEST: " + second.toUpperCase() + " " + juce::String (juce::roundToInt (p2 * 100.0f)) + "%" : juce::String();
+    juce::String line = second.isNotEmpty() ? "GENRE GUESS  //  NEXT: " + second.toUpperCase() + " " + juce::String (juce::roundToInt (p2 * 100.0f)) + "%" : juce::String();
     if (locked) line = "COMPARING TO " + lockedName.toUpperCase() + " (YOUR PICK)";
     g.drawFittedText (line, in.toNearestInt(), juce::Justification::centredLeft, 1, 0.7f);
 }

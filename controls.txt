@@ -50,7 +50,9 @@ REFERENCE GENRE
   ROCK / METAL / PUNK / HARD ROCK / POP
             Lock the comparison to one genre (it's saved with the project).
 
-  SOUNDS LIKE shows the closest genre and how sure it is, plus the runner-up.
+  SOUNDS LIKE shows the closest genre and how sure the guess is (the % is
+  split across all the genres, so it is NOT a score), plus the runner-up.
+  How well the mix fits the genre is the MIX SCORE (out of 100).
   Rock, hard rock and punk are close cousins, so a split like 45% / 35% is
   normal. If AUTO picks the wrong one, just choose your genre.
 
