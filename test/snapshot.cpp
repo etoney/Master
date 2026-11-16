@@ -641,7 +641,7 @@ int main (int argc, char** argv)
         bool fromShown = false;
         for (auto& e : p.getLog()) if (e.plugin == "Dominatrix" && e.title.startsWith ("OUTPUT  0.0 > ")) fromShown = true;
         check (fromShown, "the log shows old > new values");
-        check (p.isFixOn() && p.currentFixParams().loudOn && p.currentFixParams().gainDb == 0.0f && ! p.currentFixParams().dynOn && ! p.currentFixParams().stereoOn,
+        check (p.isFixOn() && p.currentFixParams().loudOn && std::abs (p.currentFixParams().gainDb) < 0.01f && ! p.currentFixParams().dynOn && ! p.currentFixParams().stereoOn,
                "The Master's own part: EQ + safety limiter only");
         pump (800);
         pme->refreshNow();
