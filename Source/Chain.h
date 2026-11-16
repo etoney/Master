@@ -81,6 +81,7 @@ struct ChainPlan
             to->setProperty ("id", t.id); to->setProperty ("name", t.name); to->setProperty ("role", t.role);
             to->setProperty ("share", (double) t.share); to->setProperty ("trim", (double) t.trimDb);
             to->setProperty ("comp", (double) t.comp); to->setProperty ("compOn", t.compOn);
+            to->setProperty ("deess", (double) t.deess); to->setProperty ("deessOn", t.deessOn);
             juce::Array<juce::var> e; for (auto v : t.eq) e.add ((double) v);
             to->setProperty ("eq", e);
             to->setProperty ("why", t.why.joinIntoString ("\n"));
@@ -132,6 +133,7 @@ struct ChainPlan
                 t.id = tv.getProperty ("id", "").toString(); t.name = tv.getProperty ("name", "").toString(); t.role = tv.getProperty ("role", "").toString();
                 t.share = (float) (double) tv.getProperty ("share", 0.0); t.trimDb = (float) (double) tv.getProperty ("trim", 0.0);
                 t.comp = (float) (double) tv.getProperty ("comp", 0.0); t.compOn = tv.getProperty ("compOn", false);
+                t.deess = (float) (double) tv.getProperty ("deess", 0.0); t.deessOn = tv.getProperty ("deessOn", false);
                 if (auto* e = tv.getProperty ("eq", {}).getArray()) for (int b = 0; b < juce::jmin (kNumBands, e->size()); ++b) t.eq[(size_t) b] = (float) (double) (*e)[b];
                 t.why = juce::StringArray::fromLines (tv.getProperty ("why", "").toString()); t.why.removeEmptyStrings();
                 if (auto* po = tv.getProperty ("params", {}).getDynamicObject()) for (auto& p : po->getProperties()) t.params[p.name.toString()] = (float) (double) p.value;

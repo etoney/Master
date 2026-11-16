@@ -21,6 +21,8 @@ struct TrackInfo
     std::array<double, kNumBands> bandPow {};   // mean power per band, as the track leaves its Servant
     double pow = 0, seconds = 0;
     std::vector<float> series;                  // linear power per 100 ms, aligned with the mix series
+    // sibilance, measured by The Servant (dB of the "s" band over the whole signal, every 10 ms)
+    float sibP50 = -45, sibP95 = -45, sibPerMin = 0, sibSeconds = 0, sibHz = 6500;
 };
 
 struct TrackPlan
@@ -31,8 +33,8 @@ struct TrackPlan
     float share = 0;                            // of the mix's total power
     float gainToMix = 1;
     std::array<float, kNumBands> eq {};         // dB per band
-    float trimDb = 0, comp = 0;
-    bool compOn = false;
+    float trimDb = 0, comp = 0, deess = 0;
+    bool compOn = false, deessOn = false;
     juce::StringArray why;
     std::map<juce::String, float> params;       // what goes to The Servant
     juce::String summary() const
@@ -42,6 +44,7 @@ struct TrackPlan
         int moves = 0; for (auto v : eq) if (std::abs (v) >= 0.5f) ++moves;
         if (moves > 0) s.add ("EQ " + juce::String (moves) + (moves == 1 ? " band" : " bands"));
         if (compOn) s.add ("COMP " + juce::String (juce::roundToInt (comp)) + "%");
+        if (deessOn) s.add ("DE-ESS " + juce::String (juce::roundToInt (deess)) + "%");
         if (std::abs (trimDb) >= 0.2f) s.add ("TRIM " + juce::String (trimDb > 0 ? "+" : "") + juce::String (trimDb, 1));
         return s.isEmpty() ? juce::String ("no change") : s.joinIntoString ("  //  ");
     }
@@ -261,7 +264,27 @@ inline TracksResult planTracks (const Features& mix, const GenreProfile& g, std:
         }
     }
 
-    // 5) what The Servant gets: the 6 biggest EQ moves on its tone bands (it has 6). Anything
+    // 5) de-essing: tracks whose "s" sounds jump out (usually the lead vocal). Not drums or bass:
+    //    cymbals and pick noise are supposed to be bright.
+    {
+        const float biteZ = g.z (fBand0 + 7, mix.band[7]);
+        const bool pop = G.equalsIgnoreCase ("pop");
+        for (size_t i = 0; i < n; ++i)
+        {
+            const auto& t = tracks[i];
+            if (roleIs (plans[i].role, { "Kick", "Snare", "Drums", "Bass" }) || t.sibSeconds < 5.0f) continue;
+            const float spike = t.sibP95 - t.sibP50;
+            if (spike < 10.0f || t.sibP95 < -9.0f || t.sibPerMin < 4.0f) continue;
+            auto& p = plans[i];
+            p.deessOn = true;
+            p.deess = std::round (juce::jlimit (20.0f, 80.0f, 30.0f + 3.0f * (t.sibP95 + 9.0f) + 10.0f * juce::jmax (0.0f, biteZ) + (pop ? 10.0f : 0.0f)));
+            p.why.add ("DE-ESS " + juce::String (juce::roundToInt (p.deess)) + "%: this track's \"s\" sounds jump " + juce::String (spike, 0) + " dB above the rest of it, about "
+                       + juce::String (juce::roundToInt (t.sibPerMin)) + " times a minute" + (biteZ > 1.0f ? juce::String (", and the mix's bite (4-8 kHz) is already hot for ") + G : juce::String())
+                       + ". Only the top end above " + juce::String (t.sibHz / 1000.0f, 1) + " kHz is turned down, only during an \"s\".");
+        }
+    }
+
+    // 6) what The Servant gets: the 6 biggest EQ moves on its tone bands (it has 6). Anything
     //    smaller goes back to The Master's own EQ, weighted by how much of the band this track makes.
     for (size_t i = 0; i < n; ++i)
     {
@@ -297,6 +320,8 @@ inline TracksResult planTracks (const Features& mix, const GenreProfile& g, std:
         p.params["compOn"] = p.compOn ? 1.0f : 0.0f;
         p.params["comp"] = p.comp;
         p.params["trim"] = p.trimDb;
+        p.params["deessOn"] = p.deessOn ? 1.0f : 0.0f;
+        if (p.deessOn) p.params["deess"] = p.deess;
         if (p.why.isEmpty()) p.why.add ("Already sits well in the mix. Nothing to change.");
     }
     res.tracks = std::move (plans);

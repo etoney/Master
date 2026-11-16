@@ -170,7 +170,7 @@ FIX IT WITH MY PLUGINS  (the main way: The Master sets your plugins for you)
   the master bus, then sets their controls for you over Castle Danger Link
   (automatic, offline, on your computer only).
 
-  Needs Dominatrix 1.2+, Chop Shop 1.1+ and, for tracks, The Servant 0.4+,
+  Needs Dominatrix 1.2+, Chop Shop 1.1+ and, for tracks, The Servant 0.5+,
   BuzzKill 2.1+ and Flatliner 1.1+.
 
   1. Play the whole song with only The Master on the master bus.
@@ -207,6 +207,9 @@ FIX IT WITH MY PLUGINS  (the main way: The Master sets your plugins for you)
     LEVEL  TRIMs the lead up if it's buried (or down if it's way on top).
     COMP   compresses the tracks that make the mix's peaks, and a lead that
            jumps around.
+    DE-ESS turns on The Servant's de-esser for tracks whose "s" sounds jump
+           out (usually the lead vocal; never drums or bass), stronger for
+           pop and when the mix's bite (4-8 kHz) is already hot.
   All of it comes from the genre's MIX profile: no instrument profiles and
   no stem splitting. The tracks appear under YOUR TRACKS with their share
   of the mix; APPLY sets them along with the master bus, and every change

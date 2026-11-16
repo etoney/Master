@@ -633,6 +633,12 @@ juce::String MasterProcessor::prescribe()
         for (int b = 0; b < mst::kNumBands; ++b) t.bandPow[(size_t) b] = (double) (*bp)[b];
         t.pow = p.extra.getProperty ("pow", 0.0);
         t.seconds = p.extra.getProperty ("seconds", 0.0);
+        if (auto sib = p.extra.getProperty ("sib", {}); sib.isObject())
+        {
+            t.sibP50 = (float) (double) sib.getProperty ("p50", -45.0); t.sibP95 = (float) (double) sib.getProperty ("p95", -45.0);
+            t.sibPerMin = (float) (double) sib.getProperty ("perMin", 0.0); t.sibSeconds = (float) (double) sib.getProperty ("seconds", 0.0);
+            t.sibHz = (float) (double) sib.getProperty ("hz", 6500.0);
+        }
         if (t.seconds < 1.0) continue;   // silent track (or nothing measured yet)
         tracks.push_back (t);
     }

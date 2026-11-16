@@ -447,6 +447,10 @@ int main (int argc, char** argv)
                 mixS[(size_t) k] += (float) (v * fader[i]);
             }
         }
+        // sibilance as The Servants measured it: the lead vocal hisses, the guitar is just bright, the snare spikes (but it's a snare)
+        tr[2].sibP50 = -30; tr[2].sibP95 = -1; tr[2].sibPerMin = 40; tr[2].sibSeconds = 40; tr[2].sibHz = 5600;
+        tr[0].sibP50 = -13; tr[0].sibP95 = -12; tr[0].sibPerMin = 2; tr[0].sibSeconds = 40;
+        tr[3].sibP50 = -25; tr[3].sibP95 = 0; tr[3].sibPerMin = 120; tr[3].sibSeconds = 40;
         auto res = mst::planTracks (mix, rock, tr, mixS);
         check (res.tracks.size() == 4, "a plan for every linked track");
         bool gainsOk = true;
@@ -461,6 +465,12 @@ int main (int argc, char** argv)
         bool maxSix = true;
         for (auto& tp : res.tracks) { int k = 0; for (auto v : tp.eq) if (std::abs (v) >= 0.5f) ++k; maxSix = maxSix && k <= 6; }
         check (maxSix, "no track gets more EQ moves than The Servant has bands (6)");
+        check (res.tracks[2].deessOn && res.tracks[2].params.at ("deessOn") == 1.0f && res.tracks[2].deess >= 20.0f && res.tracks[2].summary().contains ("DE-ESS"),
+               juce::String::formatted ("the hissy lead vocal gets de-essed (%.0f%%)", res.tracks[2].deess));
+        check (! res.tracks[0].deessOn && ! res.tracks[3].deessOn && res.tracks[3].params.at ("deessOn") == 0.0f,
+               "a bright guitar and a snare are left alone");
+        bool deWhy = false; for (auto& w : res.tracks[2].why) if (w.startsWith ("DE-ESS") && w.contains ("5.6 kHz")) deWhy = true;
+        check (deWhy, "the reason names how far the s sounds jump and where the split is");
         check (res.tracks[0].params.at ("toneOn") == 1.0f && std::abs (res.tracks[0].params.at ("t1g") - res.tracks[0].eq[3]) < 0.01f, "the biggest move goes on The Servant's band 1");
     }
 
@@ -747,6 +757,12 @@ int main (int argc, char** argv)
             auto* o = new juce::DynamicObject();
             o->setProperty ("track", track); o->setProperty ("role", role); o->setProperty ("seconds", 30.0);
             o->setProperty ("listening", finishSeqSeen == 0); o->setProperty ("finished", finishSeqSeen);
+            if (juce::String (role) == "Lead")
+            {
+                auto* sb = new juce::DynamicObject();
+                sb->setProperty ("p50", -28.0); sb->setProperty ("p95", -2.0); sb->setProperty ("perMin", 30.0); sb->setProperty ("seconds", 30.0); sb->setProperty ("hz", 6000.0);
+                o->setProperty ("sib", juce::var (sb));
+            }
             juce::Array<juce::var> b; double tot = 0; for (auto v : bands) { b.add (v); tot += v; }
             o->setProperty ("bandPow", b); o->setProperty ("pow", tot);
             return juce::var (o);
@@ -846,6 +862,8 @@ int main (int argc, char** argv)
         pump (300);
         check (gtr.sets == 1 && vox.sets == 1 && gtr.lastSet.getProperty ("params", {}).hasProperty ("trim") && gtr.lastSet.getProperty ("params", {}).hasProperty ("t1g"),
                "both Servants received their tone / comp / trim settings");
+        check (std::abs (vox.params["deessOn"] - 1.0) < 0.01 && vox.params["deess"] >= 20.0 && std::abs (gtr.params["deessOn"]) < 0.01,
+               "APPLY turns the de-esser on for the hissy lead vocal only");
         check (bkz.sets == 1 && bkz.params["listen"] == 0.0 && std::abs (bkz.params["release"] - bkPlan->params.at ("release")) < 0.01
                && flt.sets == 1 && std::abs (flt.params["range"] - flPlan->params.at ("range")) < 0.01,
                "BuzzKill and Flatliner received their settings");
