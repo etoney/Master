@@ -40,6 +40,29 @@ private:
     float fontSize;
 };
 
+// MY PLUGINS: the prescribed chain and whether each plugin is linked and in the right spot
+class ChainView : public juce::Component
+{
+public:
+    void paint (juce::Graphics&) override;
+    std::vector<MasterProcessor::StepStatus> steps;
+    juce::StringArray onTracks;
+    bool hasPlan = false, orderKnown = false;
+    int stage = 0;
+};
+
+// MY PLUGINS: what The Master changed in which plugin, and why (lives in a Viewport)
+class ChangeLog : public juce::Component
+{
+public:
+    void setEntries (const std::vector<MasterProcessor::LogEntry>& entries, int width, const juce::String& emptyText);
+    void paint (juce::Graphics&) override;
+private:
+    struct Laid { MasterProcessor::LogEntry e; juce::TextLayout body; int y = 0, h = 0, bodyH = 0; };
+    std::vector<Laid> laid;
+    juce::String empty;
+};
+
 // Left column of the FIX IT page: scores before/after, what AUTO FIX did, what it can't fix, live meters
 class FixInfo : public juce::Component
 {
@@ -175,6 +198,9 @@ private:
     void showMessage (const juce::String& title, const juce::String& text);
     void copyReport();
     void setPage (int page);
+    void updateVisibility();
+    void runChainButton();
+    int backdropIndex() const { return page == 0 ? 0 : (proc.isPluginMode() ? 2 : 1); }
     void runAutoFix();
     void layoutFixPage();
 
@@ -229,14 +255,21 @@ private:
     std::unique_ptr<Selector> humSel, ceilSel;
     std::vector<std::unique_ptr<FixSection>> sections;
     FixInfo fixInfo;
-    std::vector<juce::Component*> analyzeComps, fixComps;
+    std::vector<juce::Component*> analyzeComps, fixComps, chainComps;
+    Selector modeSel { nullptr, { "BUILT-IN FIXES", "MY PLUGINS" }, 14.0f };
+    ChainView chainView;
+    juce::Viewport logViewport;
+    ChangeLog changeLog;
+    juce::TextButton newRxButton { "NEW PRESCRIPTION" };
+    juce::Label hintLabel;
+    int lastLinkVersion = -1, lastChainSig = -1;
     int lastPlanSig = 0;
     std::unique_ptr<juce::FileChooser> chooser;
 
     std::vector<Plate> plates;
     juce::Rectangle<int> logoArea, badgeArea, crestArea, controlArea, stripeArea, statusArea, tabsArea;
     juce::Image backdrop, logoImage;
-    std::array<juce::Image, 2> backdropCache;
+    std::array<juce::Image, 3> backdropCache;
     juce::String statusText;
     float flicker = 0.0f, activity = 0.0f;
     int lastSnap = -1, lastLib = -1;

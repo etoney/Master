@@ -153,6 +153,42 @@ FIX IT  (automatic corrections, with override)
 
 
 -------------------------------------------------------------------------------
+MY PLUGINS  (The Master sets your Castle Danger plugins for you)
+-------------------------------------------------------------------------------
+  On the FIX IT page, switch BUILT-IN FIXES to MY PLUGINS. Instead of fixing
+  the mix itself, The Master tells you which Castle Danger plugins to put on
+  the master bus, then sets their controls for you over Castle Danger Link
+  (automatic, offline, on your computer only).
+
+  Needs Dominatrix 1.2 or later and Chop Shop 1.1 or later.
+
+  1. Play the whole song with only The Master on the master bus.
+  2. PRESCRIBE. THE PRESCRIPTION lists the chain, in order, for example:
+        1 CHOP SHOP   shaves the peaks that stick out
+        2 DOMINATRIX  glue, colour, stereo, loudness into the -1 dB ceiling
+        3 THE MASTER  last: measures, plus the tone EQ and a safety limiter
+     plus advice for individual tracks (BuzzKill for hum, Flatliner...).
+  3. Put the plugins on the master bus in that order, BEFORE The Master.
+     Each one shows LINKED as soon as it's found. Play a few seconds and The
+     Master checks they're in the right order (it compares their levels).
+  4. APPLY. Nothing changes until you press it. The Master sets every
+     control on the plugins, exactly as if you'd turned the knobs (your DAW
+     sees it: undo and automation work). WHAT I CHANGED & WHY lists every
+     setting, old > new, with the reason. The lamp turns green when the
+     plugin confirms.
+  5. Play the song through, then REFINE: The Master measures what actually
+     came out and fine-tunes (mostly Dominatrix's OUTPUT for loudness, Chop
+     Shop's CEILING if the peaks still stick out), and explains each step.
+  Override anything on the plugins themselves at any time.
+  NEW PRESCRIPTION starts over (take the plugins off or bypass them and
+  play the song again first, so The Master hears the untreated mix).
+
+  None of the linked plugins is an EQ, so The Master does the tone match
+  itself (its TONE MATCH EQ), followed by a -1 dBTP safety limiter.
+  Coming next: The Servant on individual tracks, linked to The Master.
+
+
+-------------------------------------------------------------------------------
 GENRE PROFILES
 -------------------------------------------------------------------------------
   The genres are profiles: what records in each genre measure, built from

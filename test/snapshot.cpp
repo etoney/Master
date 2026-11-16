@@ -8,6 +8,7 @@
 #include "../Source/PluginProcessor.h"
 #include "../Source/PluginEditor.h"
 #include "BinaryData.h"
+#include "../Source/CDLink.h"
 
 static bool writePng (const juce::Image& img, const juce::File& f)
 {
@@ -516,6 +517,153 @@ int main (int argc, char** argv)
         check (q.getLatencySamples() == 0 || q.getLatencySamples() == p.getLatencySamples(), "latency is constant");
         p.apvts.getParameter ("fixOn")->setValueNotifyingHost (0.0f);
         check (p.getLatencySamples() > 0 && ! p.isFixOn(), "FIX off keeps the same latency (A/B doesn't shift timing)");
+    }
+
+
+    // ---------------- MY PLUGINS: prescription, chain detection, APPLY over Castle Danger Link
+    {
+        MasterProcessor p;
+        p.setPlayConfigDetails (2, 2, SR, 512);
+        p.prepareToPlay (SR, 512);
+        p.setGenreChoice ("rock");
+        auto pump = [] (int ms) { juce::MessageManager::getInstance()->runDispatchLoopUntil (ms); };
+
+        // fake Dominatrix + Chop Shop living in "another plugin binary" (a separate node: real socket)
+        auto other = cdlink::Node::createIsolatedForTesting();
+        juce::var masterEnv;
+        struct Fake
+        {
+            juce::String kind; std::map<juce::String, double> params; juce::var lastSet; int sets = 0;
+            std::unique_ptr<cdlink::Endpoint> ep;
+        };
+        Fake dom { "dominatrix", { { "discipline", 30 }, { "outputDb", 0 }, { "ceiling", 0 }, { "bassMono", 0 }, { "width", 100 }, { "satType", 0 }, { "saturation", 20 } } };
+        Fake chop { "chopshop", { { "ceilingDb", 0 }, { "mode", 0 }, { "shape", 0 } } };
+        juce::var watcherEnv;
+        cdlink::Endpoint watcher ("watch", [&] (const juce::var& m) { if (m.getProperty ("kind", "").toString() == "master" && m.getProperty ("type", "").toString() == "status") watcherEnv = m.getProperty ("env", {}); }, other);
+        for (auto* f : { &dom, &chop })
+            f->ep = std::make_unique<cdlink::Endpoint> (f->kind, [f] (const juce::var& m)
+            {
+                if (m.getProperty ("type", "").toString() != "set") return;
+                f->lastSet = m; ++f->sets;
+                if (auto* o = m.getProperty ("params", {}).getDynamicObject()) for (auto& pr : o->getProperties()) f->params[pr.name.toString()] = (double) pr.value;
+                auto r = cdlink::Endpoint::makeMessage ("applied");
+                auto* po = new juce::DynamicObject(); for (auto& [k, v] : f->params) po->setProperty (k, v);
+                r->setProperty ("params", juce::var (po));
+                f->ep->send (r, m.getProperty ("from", "").toString());
+            }, other);
+        auto sendStatus = [&] (Fake& f, const juce::var& e)
+        {
+            auto m = cdlink::Endpoint::makeMessage ("status");
+            auto* po = new juce::DynamicObject(); for (auto& [k, v] : f.params) po->setProperty (k, v);
+            m->setProperty ("params", juce::var (po)); m->setProperty ("env", e);
+            f.ep->send (m);
+        };
+        // envelope helpers: copy of The Master's input fingerprint, with a different "shape" for upstream points
+        auto envWith = [] (const juce::var& base, const char* inShape, const char* outShape)
+        {
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("slot", base.getProperty ("slot", 0.0));
+            juce::Array<juce::var> in, out;
+            if (auto* a = base.getProperty ("in", {}).getArray())
+                for (int i = 0; i < a->size(); ++i)
+                {
+                    const double v = (*a)[i];
+                    auto shape = [&] (const char* s) { return juce::String (s) == "same" ? v : (juce::String (s) == "wobble" ? v + ((i % 3) - 1) * 2.0 : v + ((i % 5) - 2) * 3.0); };
+                    in.add (shape (inShape)); out.add (shape (outShape));
+                }
+            o->setProperty ("in", in); o->setProperty ("out", out);
+            return juce::var (o);
+        };
+
+        // 1) your mix, nothing on the bus yet: quiet and peaky
+        auto g = drumMix (0.3f);
+        int64_t pos = 0;
+        auto play = [&] (double secs, bool realtime)
+        {
+            const int blocks = (int) (secs * SR / 512);
+            for (int b = 0; b < blocks; ++b, pos += 512)
+            {
+                juce::AudioBuffer<float> buf (2, 512);
+                for (int i = 0; i < 512; ++i) for (int c = 0; c < 2; ++c) buf.setSample (c, i, g (pos + i, c));
+                juce::MidiBuffer midi; p.processBlock (buf, midi);
+                if (realtime && b % 8 == 0) pump (85);
+            }
+        };
+        p.setNonRealtime (true);
+        play (30.0, false);
+        p.getWorker().waitUntilIdle (8000);
+        check (p.applyChain().isNotEmpty(), "APPLY needs a prescription first");
+        check (p.prescribe().isEmpty() && p.getChainStage() == 1, "PRESCRIBE from the analysis");
+        const auto& cp = p.getChainPlan();
+        check (cp.steps.size() == 2 && cp.steps[0].kind == "chopshop" && cp.steps[1].kind == "dominatrix", "prescription: Chop Shop, then Dominatrix, then The Master");
+        check (cp.step ("dominatrix")->params.at ("outputDb") > 3.0f && cp.step ("dominatrix")->params.at ("ceiling") == 0.0f, "Dominatrix: OUTPUT drives into the -1 dB ceiling");
+        check (cp.step ("chopshop")->params.at ("ceilingDb") < cp.before.samplePeak - 1.0f && cp.step ("chopshop")->params.at ("shape") == 1.0f, "Chop Shop: soft ceiling under the loudest peaks");
+        bool allWhy = ! cp.changes.empty(); for (auto& c : cp.changes) allWhy = allWhy && c.why.isNotEmpty();
+        check (allWhy, juce::String::formatted ("every planned change has a reason (%d changes)", (int) cp.changes.size()));
+        check (p.applyChain().contains ("Chop Shop") , "APPLY says which plugins are missing");
+
+        // 2) the plugins appear (and keep reporting 4x a second, like the real ones);
+        //    play in real time so The Master can check the order
+        struct Pinger : juce::Timer { std::function<void()> f; void timerCallback() override { f(); } } pinger;
+        pinger.f = [&]
+        {
+            if (! watcherEnv.isObject()) return;
+            sendStatus (dom, envWith (watcherEnv, "wobble", "same"));     // Dominatrix's output = The Master's input
+            sendStatus (chop, envWith (watcherEnv, "spiky", "wobble"));   // Chop Shop's output = Dominatrix's input
+        };
+        pinger.startTimer (250);
+        p.setNonRealtime (false);
+        for (int round = 0; round < 30; ++round) { play (0.2, true); pump (30); }
+        auto st = p.chainStatus();
+        check (st.size() == 2 && st[0].linked && st[1].linked, "both prescribed plugins are linked");
+        check (p.chainOrderKnown() && st[0].position == 0 && st[1].position == 1 && st[0].orderOk && st[1].orderOk,
+               juce::String::formatted ("chain order detected from the level fingerprints (chop %d, dom %d)", st[0].position, st[1].position));
+
+        p.setPluginMode (true);
+        std::unique_ptr<juce::AudioProcessorEditor> ped (p.createEditor());
+        auto* pme = dynamic_cast<MasterEditor*> (ped.get());
+        pme->showPage (1);
+        pump (900);
+        pme->refreshNow();
+        check (writePng (ped->createComponentSnapshot (ped->getLocalBounds(), true, 1.0f), dir.getChildFile ("gui_plugins_ready.png")), "MY PLUGINS: prescription, both linked, in order");
+
+        // 3) APPLY (through the big button, like a user)
+        pme->pressAutoFix();
+        pump (60);
+        check (p.getChainStage() == 2, "APPLY sends the settings");
+        for (int i = 0; i < 40 && (dom.sets == 0 || chop.sets == 0); ++i) pump (50);
+        pump (300);
+        check (dom.sets == 1 && std::abs (dom.params["outputDb"] - cp.step ("dominatrix")->params.at ("outputDb")) < 0.01 && chop.sets == 1
+               && std::abs (chop.params["ceilingDb"] - cp.step ("chopshop")->params.at ("ceilingDb")) < 0.01, "Dominatrix and Chop Shop received their settings");
+        bool confirmed = true; int n = 0;
+        for (auto& e : p.getLog()) { if (e.plugin != "The Master") { confirmed = confirmed && e.confirmed; ++n; } }
+        check (n > 5 && confirmed, juce::String::formatted ("the log explains every change and shows both plugins confirmed (%d entries)", n));
+        bool fromShown = false;
+        for (auto& e : p.getLog()) if (e.plugin == "Dominatrix" && e.title.startsWith ("OUTPUT  0.0 > ")) fromShown = true;
+        check (fromShown, "the log shows old > new values");
+        check (p.isFixOn() && p.currentFixParams().loudOn && p.currentFixParams().gainDb == 0.0f && ! p.currentFixParams().dynOn && ! p.currentFixParams().stereoOn,
+               "The Master's own part: EQ + safety limiter only");
+        pump (800);
+        pme->refreshNow();
+        check (writePng (ped->createComponentSnapshot (ped->getLocalBounds(), true, 2.0f), dir.getChildFile ("gui_plugins_applied.png")), "MY PLUGINS: applied, with the change log");
+
+        // 4) REFINE from what came out
+        check (p.refineChain().isNotEmpty(), "REFINE waits for a play-through");
+        dom.params["outputDb"] = 2.0;   // you turned Dominatrix's OUTPUT down by hand (the fakes don't change the audio, so the mix is still quiet)
+        p.setNonRealtime (true);
+        play (25.0, false);
+        p.getPostWorker().waitUntilIdle (8000);
+        pump (400);
+        const int before = dom.sets;
+        check (p.refineChain().isEmpty(), "REFINE after a play-through");
+        for (int i = 0; i < 20 && dom.sets == before; ++i) pump (50);
+        check (dom.sets > before && p.getLog().back().detail.isNotEmpty(), "REFINE adjusts Dominatrix's OUTPUT from the measured loudness and explains it");
+        pinger.stopTimer();
+        ped.reset();
+
+        juce::MemoryBlock stt; p.getStateInformation (stt);
+        MasterProcessor q; q.setStateInformation (stt.getData(), (int) stt.getSize());
+        check (q.getChainStage() == 2 && q.getChainPlan().steps.size() == 2 && ! q.getLog().empty(), "the prescription and log are saved with the project");
     }
 
     // ---------------- GUI

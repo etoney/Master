@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "BinaryData.h"
+#include <set>
 
 //==============================================================================
 AnalysisWorker::AnalysisWorker() : juce::Thread ("The Master analysis")
@@ -120,10 +121,15 @@ MasterProcessor::MasterProcessor()
 {
     library.load (juce::String::fromUTF8 (BinaryData::factory_json, BinaryData::factory_jsonSize), mst::ProfileLibrary::getUserPackFile());
     for (auto& id : fixParamIds()) apvts.addParameterListener (id, this);
+    link = std::make_unique<cdlink::Endpoint> ("master", [this] (const juce::var& m) { onLinkMessage (m); });
+    linkTimer.fn = [this] { linkTick(); };
+    linkTimer.startTimerHz (4);
+    link->send (cdlink::Endpoint::makeMessage ("hello"));
 }
 
 MasterProcessor::~MasterProcessor()
 {
+    linkTimer.stopTimer();
     for (auto& id : fixParamIds()) apvts.removeParameterListener (id, this);
 }
 
@@ -303,6 +309,8 @@ void MasterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         r = monoR.data();
     }
     inPeak.store (std::max (inPeak.load(), std::max (buffer.getMagnitude (0, 0, n), stereo ? buffer.getMagnitude (1, 0, n) : 0.0f)));
+    double inPow = 0;
+    for (int i = 0; i < n; ++i) inPow += 0.5 * ((double) l[i] * l[i] + (double) r[i] * r[i]);
     const bool listen = isListening(), offline = isNonRealtime();
     if (listen) worker.push (l, r, n, offline);
 
@@ -315,6 +323,9 @@ void MasterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             if (listen) postWorker.push (pl, pr, m, offline);
         });
     }
+    double outPow = 0;
+    for (int i = 0; i < n; ++i) outPow += 0.5 * ((double) l[i] * l[i] + (double) r[i] * r[i]);
+    env.addPowers (inPow / juce::jmax (1, n), outPow / juce::jmax (1, n), n);
 }
 
 void MasterProcessor::resetAnalysis()
@@ -354,6 +365,10 @@ void MasterProcessor::getStateInformation (juce::MemoryBlock& destData)
     else state.removeProperty ("analysis", nullptr);
     if (plan.valid) state.setProperty ("autoFix", juce::JSON::toString (plan.toVar(), true), nullptr);
     else state.removeProperty ("autoFix", nullptr);
+    state.setProperty ("pluginMode", pluginMode, nullptr);
+    state.setProperty ("chainStage", chainStage, nullptr);
+    if (chainPlan.valid) state.setProperty ("chainPlan", juce::JSON::toString (chainPlan.toVar(), true), nullptr);
+    else state.removeProperty ("chainPlan", nullptr);
     if (auto xml = state.createXml()) copyXmlToBinary (*xml, destData);
 }
 
@@ -368,8 +383,17 @@ void MasterProcessor::setStateInformation (const void* data, int sizeInBytes)
             savedFeatures = a.isNotEmpty() ? mst::Features::fromVar (juce::JSON::parse (a)) : mst::Features {};
             const auto af = state.getProperty ("autoFix", "").toString();
             plan = af.isNotEmpty() ? mst::FixPlan::fromVar (juce::JSON::parse (af)) : mst::FixPlan {};
+            pluginMode = state.getProperty ("pluginMode", false);
+            chainStage = state.getProperty ("chainStage", 0);
+            const auto cp = state.getProperty ("chainPlan", "").toString();
+            chainPlan = cp.isNotEmpty() ? mst::ChainPlan::fromVar (juce::JSON::parse (cp)) : mst::ChainPlan {};
+            if (! chainPlan.valid) chainStage = 0;
+            chainLog.clear();
+            for (auto& c : chainPlan.changes)
+                chainLog.push_back ({ mst::plugDisplayName (c.plugin), c.label, c.why, chainStage >= 2 });
             state.removeProperty ("analysis", nullptr);
             state.removeProperty ("autoFix", nullptr);
+            state.removeProperty ("chainPlan", nullptr);
             apvts.replaceState (state);
         }
 }
@@ -377,3 +401,236 @@ void MasterProcessor::setStateInformation (const void* data, int sizeInBytes)
 juce::AudioProcessorEditor* MasterProcessor::createEditor() { return new MasterEditor (*this); }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new MasterProcessor(); }
+
+//==============================================================================
+// Castle Danger Link
+void MasterProcessor::onLinkMessage (const juce::var& m)
+{
+    const auto type = m.getProperty ("type", "").toString();
+    const auto from = m.getProperty ("from", "").toString();
+    const auto kind = m.getProperty ("kind", "").toString();
+    if (kind == "master") return;
+    if (type == "bye") { peers.erase (from); ++linkVersion; return; }
+    if (type == "status" || type == "applied")
+    {
+        auto& p = peers[from];
+        const bool isNew = p.id.isEmpty();
+        p.id = from; p.kind = kind;
+        if (type == "status")
+        {
+            p.name = m.getProperty ("name", kind).toString();
+            p.version = m.getProperty ("version", "").toString();
+            p.env = m.getProperty ("env", {});
+            p.extra = m.getProperty ("extra", {});
+        }
+        p.params = m.getProperty ("params", p.params);
+        p.seen = juce::Time::getMillisecondCounter();
+        if (type == "applied")
+            for (auto& e : chainLog)
+                if (e.plugin == mst::plugDisplayName (kind)) e.confirmed = true;
+        if (isNew || type == "applied") ++linkVersion;
+    }
+}
+
+void MasterProcessor::linkTick()
+{
+    const auto now = juce::Time::getMillisecondCounter();
+    for (auto it = peers.begin(); it != peers.end();)
+        if (now - it->second.seen > 3000) { it = peers.erase (it); ++linkVersion; }
+        else ++it;
+    auto m = cdlink::Endpoint::makeMessage ("status");
+    m->setProperty ("name", "The Master");
+    m->setProperty ("env", env.toVar());
+    link->send (m);
+}
+
+std::vector<MasterProcessor::Peer> MasterProcessor::getPeers() const
+{
+    std::vector<Peer> v;
+    for (auto& [id, p] : peers) v.push_back (p);
+    return v;
+}
+
+std::vector<juce::String> MasterProcessor::detectChain() const
+{
+    std::vector<juce::String> order;
+    const auto myEnv = env.toVar();
+    juce::var cur = myEnv;
+    juce::String curKey = "in";
+    std::set<juce::String> used;
+    for (int depth = 0; depth < 8; ++depth)
+    {
+        juce::String best; float bestD = 0.6f;
+        for (auto& [id, p] : peers)
+        {
+            if (used.count (id) || ! p.env.isObject()) continue;
+            int shared = 0;
+            const float d = cdlink::envDistance (p.env, "out", cur, curKey, shared);
+            if (shared >= 12 && d < bestD) { bestD = d; best = id; }
+        }
+        if (best.isEmpty()) break;
+        used.insert (best);
+        order.insert (order.begin(), best);
+        cur = peers.at (best).env;
+        curKey = "in";
+    }
+    return order;
+}
+
+bool MasterProcessor::chainOrderKnown() const
+{
+    const auto e = env.toVar();
+    int loud = 0;
+    if (auto* a = e.getProperty ("in", {}).getArray()) for (auto& v : *a) if ((double) v > -70.0) ++loud;
+    return loud >= 12;
+}
+
+juce::String MasterProcessor::resolvePeer (const juce::String& kind) const
+{
+    const auto order = detectChain();
+    for (auto& id : order) if (peers.at (id).kind == kind) return id;
+    juce::String only; int count = 0;
+    for (auto& [id, p] : peers) if (p.kind == kind) { only = id; ++count; }
+    return count == 1 ? only : juce::String();
+}
+
+std::vector<MasterProcessor::StepStatus> MasterProcessor::chainStatus() const
+{
+    std::vector<StepStatus> out;
+    if (! chainPlan.valid) return out;
+    const auto order = detectChain();
+    int lastPos = -1;
+    for (auto& st : chainPlan.steps)
+    {
+        StepStatus s;
+        s.kind = st.kind; s.name = st.name; s.role = st.role;
+        s.peerId = resolvePeer (st.kind);
+        s.linked = s.peerId.isNotEmpty();
+        for (int i = 0; i < (int) order.size(); ++i) if (order[(size_t) i] == s.peerId) s.position = i;
+        s.orderOk = s.position >= 0 && s.position > lastPos;
+        if (s.position >= 0) lastPos = s.position;
+        out.push_back (s);
+    }
+    return out;
+}
+
+void MasterProcessor::sendSet (const juce::String& peerId, const std::map<juce::String, float>& params, const juce::String& note)
+{
+    auto m = cdlink::Endpoint::makeMessage ("set");
+    auto* o = new juce::DynamicObject();
+    for (auto& [k, v] : params) o->setProperty (k, (double) v);
+    m->setProperty ("params", juce::var (o));
+    m->setProperty ("note", note);
+    link->send (m, peerId);
+}
+
+juce::String MasterProcessor::prescribe()
+{
+    bool saved = false;
+    auto in = getDisplayFeatures (saved);
+    if (! in.valid) return "Play the whole song first (with no plugins on the master bus before The Master), then press PRESCRIBE.";
+    const auto target = resolveTarget (in);
+    const auto& genres = library.genres();
+    if (target.index < 0 || target.index >= (int) genres.size()) return "No genre profile to aim for.";
+    chainPlan = mst::planChain (in, genres[(size_t) target.index]);
+    chainStage = 1;
+    chainLog.clear();
+    ++linkVersion;
+    link->send (cdlink::Endpoint::makeMessage ("hello"));   // ask everyone to report right away
+    return {};
+}
+
+juce::String MasterProcessor::applyChain()
+{
+    if (! chainPlan.valid) return "Press PRESCRIBE first.";
+    const auto st = chainStatus();
+    juce::StringArray missing;
+    for (auto& s : st) if (! s.linked) missing.add (s.name);
+    if (! missing.isEmpty())
+        return "Put " + missing.joinIntoString (" and ") + " on the master bus (before The Master) first. If more than one copy is open, play a few seconds so The Master can tell which one is on the bus.";
+
+    chainLog.clear();
+    for (auto& s : st)
+    {
+        const auto* step = chainPlan.step (s.kind);
+        const auto& peer = peers.at (s.peerId);
+        sendSet (s.peerId, step->params, "The Master: " + chainPlan.genreName + " prescription");
+        for (auto& c : chainPlan.changes)
+            if (c.plugin == s.kind)
+            {
+                c.hasFrom = peer.params.hasProperty (c.param);
+                if (c.hasFrom) c.from = (float) (double) peer.params.getProperty (c.param, 0.0);
+            }
+    }
+    // The Master's own part: tone EQ + safety limiter, nothing else
+    const auto& f = chainPlan.masterFix;
+    plan = {};
+    plan.valid = true; plan.p = f; plan.genreName = chainPlan.genreName; plan.seconds = chainPlan.seconds;
+    plan.whyEq = "Part of the MY PLUGINS prescription.";
+    for (auto sct : { secEq, secDyn, secStereo, secHum, secLoud }) applySection (sct, f);
+    setParam ("amount", 100.0f);
+    setParam ("match", 0.0f);
+    setParam ("fixOn", 1.0f);
+
+    for (auto& c : chainPlan.changes)
+    {
+        juce::String title = c.label;
+        if (c.plugin != "master")
+        {
+            const bool choice = c.unit != "dB" && c.unit != "%";   // named settings: MASTER, SOFT, 4x, TAPE, ON, -1 dB...
+            auto fmt = [&] (float v) { return choice ? c.unit : juce::String (v, 1) + (c.unit == "%" ? "%" : " " + c.unit); };
+            title << "  " << (c.hasFrom && ! choice ? juce::String (c.from, 1) + " > " : juce::String()) << fmt (c.to);
+        }
+        else title << "  " << c.unit;
+        chainLog.push_back ({ mst::plugDisplayName (c.plugin), title, c.why, c.plugin == "master" });
+    }
+    chainStage = 2;
+    resetAnalysis();
+    ++linkVersion;
+    return {};
+}
+
+juce::String MasterProcessor::refineChain()
+{
+    if (chainStage < 2) return "APPLY the prescription first.";
+    const auto after = getAfterFeatures();
+    if (! after.valid || after.seconds < 20.0) return "Play at least 20 seconds (best the whole song) after APPLY, then press REFINE.";
+    const auto& genres = library.genres();
+    const auto target = resolveTarget (chainPlan.before);
+    if (target.index < 0) return "No genre profile.";
+    const auto& g = genres[(size_t) target.index];
+    std::vector<LogEntry> added;
+
+    const auto dom = resolvePeer ("dominatrix");
+    if (dom.isNotEmpty())
+    {
+        const float cur = (float) (double) peers.at (dom).params.getProperty ("outputDb", 0.0);
+        const float want = g.stat (mst::fLufs).mean - after.lufs;
+        const float next = juce::jlimit (-12.0f, 12.0f, std::round ((cur + want) * 10.0f) / 10.0f);
+        if (std::abs (next - cur) >= 0.2f)
+        {
+            sendSet (dom, { { "outputDb", next } }, "The Master: refine loudness");
+            added.push_back ({ "Dominatrix", "OUTPUT  " + juce::String (cur, 1) + " > " + juce::String (next, 1) + " dB",
+                               "It came out at " + juce::String (after.lufs, 1) + " LUFS; the target for " + g.name + " is " + juce::String (g.stat (mst::fLufs).mean, 1) + "." });
+        }
+        if (after.lowCorrelation < 0.9f && (double) peers.at (dom).params.getProperty ("bassMono", 0.0) < 0.5)
+        {
+            sendSet (dom, { { "bassMono", 1.0f } }, "The Master: refine");
+            added.push_back ({ "Dominatrix", "BASS MONO  ON", "The low end still isn't centred after the chain." });
+        }
+    }
+    const auto chop = resolvePeer ("chopshop");
+    if (chop.isNotEmpty() && g.z (mst::fPlr, after.plr) > 1.0f)
+    {
+        const float cur = (float) (double) peers.at (chop).params.getProperty ("ceilingDb", 0.0);
+        const float next = juce::jmax (-24.0f, cur - 1.0f);
+        sendSet (chop, { { "ceilingDb", next } }, "The Master: refine peaks");
+        added.push_back ({ "Chop Shop", "CEILING  " + juce::String (cur, 1) + " > " + juce::String (next, 1) + " dB",
+                           "Peaks still stick out " + juce::String (after.plr, 1) + " dB over the average after the chain; shaving another dB." });
+    }
+    if (added.empty()) added.push_back ({ "The Master", "NOTHING TO REFINE", "Loudness, peaks and low end landed where " + g.name + " records sit." });
+    for (auto& a : added) chainLog.push_back (a);
+    resetAnalysis();
+    ++linkVersion;
+    return {};
+}

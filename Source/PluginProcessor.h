@@ -2,6 +2,8 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "Advisor.h"
 #include "Cure.h"
+#include "Chain.h"
+#include "CDLink.h"
 
 // Lock-free hand-off from the audio thread to a low-priority analysis thread, so the
 // master bus never waits on an FFT. Audio passes through untouched (zero latency).
@@ -93,6 +95,36 @@ public:
     mst::FixParams currentFixParams() const;
     mst::FixChain& getChain() { return chain; }
     static juce::StringArray fixParamIds();
+
+    // ---- MY PLUGINS mode: The Master prescribes Castle Danger plugins for the master bus,
+    //      then sets their controls over Castle Danger Link when you press APPLY.
+    struct Peer
+    {
+        juce::String id, kind, name, version;
+        juce::var params, env, extra;
+        juce::uint32 seen = 0;
+    };
+    struct StepStatus
+    {
+        juce::String kind, name, role, peerId;
+        bool linked = false;         // a plugin of this kind is in the session
+        int position = -1;           // where it actually sits in The Master's chain (0 = first), -1 = not detected
+        bool orderOk = false;        // detected and in the prescribed order
+    };
+    struct LogEntry { juce::String plugin, title, detail; bool confirmed = false; };
+
+    bool isPluginMode() const { return pluginMode; }
+    void setPluginMode (bool b) { pluginMode = b; }
+    std::vector<Peer> getPeers() const;
+    std::vector<StepStatus> chainStatus() const;   // the prescription vs what's actually on the bus
+    bool chainOrderKnown() const;                  // enough audio has played to check the order
+    juce::String prescribe();                      // freezes the analysis, makes the prescription
+    juce::String applyChain();                     // sends the settings (needs every prescribed plugin linked)
+    juce::String refineChain();                    // after a play-through: fine-tune from what came out
+    int getChainStage() const { return chainStage; }   // 0 nothing, 1 prescribed, 2 applied
+    const mst::ChainPlan& getChainPlan() const { return chainPlan; }
+    const std::vector<LogEntry>& getLog() const { return chainLog; }
+    std::atomic<int> linkVersion { 0 };
     bool isListening() const { return apvts.getRawParameterValue ("listen")->load() > 0.5f; }
     std::atomic<float> inPeak { 0.0f };
 
@@ -107,6 +139,21 @@ public:
 
 private:
     void parameterChanged (const juce::String&, float) override;
+    void onLinkMessage (const juce::var&);
+    void linkTick();
+    juce::String resolvePeer (const juce::String& kind) const;
+    std::vector<juce::String> detectChain() const;   // peer ids feeding The Master, first .. last
+    void sendSet (const juce::String& peerId, const std::map<juce::String, float>& params, const juce::String& note);
+    struct LinkTimer : juce::Timer { std::function<void()> fn; void timerCallback() override { fn(); } };
+
+    bool pluginMode = false;
+    int chainStage = 0;
+    mst::ChainPlan chainPlan;
+    std::vector<LogEntry> chainLog;
+    std::map<juce::String, Peer> peers;
+    cdlink::EnvTap env;
+    std::unique_ptr<cdlink::Endpoint> link;
+    LinkTimer linkTimer;
     void setParam (const juce::String& id, float value);
     void applySection (Section, const mst::FixParams&);
 

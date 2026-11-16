@@ -387,6 +387,113 @@ void Selector::paint (juce::Graphics& g)
     }
 }
 
+
+//==============================================================================
+void ChainView::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat();
+    g.setColour (pal::screen); g.fillRoundedRectangle (r, 4.0f);
+    g.setColour (juce::Colour (0xff3a2418)); g.drawRoundedRectangle (r.reduced (0.5f), 4.0f, 1.0f);
+    r = r.reduced (12, 8);
+    if (! hasPlan)
+    {
+        g.setColour (pal::paintDim); g.setFont (bodyFont (13.0f));
+        g.drawFittedText ("Play your whole song with nothing on the master bus except The Master (last), then press PRESCRIBE. "
+                          "The Master will tell you which Castle Danger plugins to add, and in what order.", r.toNearestInt(), juce::Justification::centredLeft, 4);
+        return;
+    }
+    const int n = (int) steps.size() + 1;
+    auto list = r.removeFromTop (juce::jmin (r.getHeight() - (onTracks.isEmpty() ? 0.0f : 46.0f), 44.0f * (float) n));
+    const float rh = list.getHeight() / (float) n;
+    for (int i = 0; i < n; ++i)
+    {
+        auto row = list.removeFromTop (rh).reduced (0, 3);
+        const bool isMaster = i == n - 1;
+        const auto* s = isMaster ? nullptr : &steps[(size_t) i];
+        // number badge
+        auto badge = row.removeFromLeft (row.getHeight()).reduced (3);
+        g.setColour (isMaster ? pal::rust : pal::rustDeep); g.fillEllipse (badge);
+        g.setColour (pal::paint); g.setFont (tex::stencil (badge.getHeight() * 0.6f));
+        g.drawText (juce::String (i + 1), badge.toNearestInt(), juce::Justification::centred);
+        row.removeFromLeft (10);
+        // status (right)
+        auto stat = row.removeFromRight (230);
+        juce::Colour col; juce::String txt;
+        if (isMaster) { col = juce::Colour (0xff9aa86a); txt = "YOU ARE HERE (LAST)"; }
+        else if (! s->linked) { col = pal::signalHot; txt = "NOT FOUND: ADD IT"; }
+        else if (s->position < 0) { col = pal::hazard; txt = orderKnown ? "LINKED, NOT IN THIS CHAIN?" : "LINKED  //  PLAY TO CHECK ORDER"; }
+        else if (! s->orderOk) { col = pal::signalHot; txt = "LINKED  //  WRONG SPOT"; }
+        else { col = juce::Colour (0xff9aa86a); txt = stage >= 2 ? "LINKED  //  SET" : "LINKED  //  IN ORDER"; }
+        auto lamp = juce::Rectangle<float> (9, 9).withCentre ({ stat.getX() + 6, stat.getCentreY() });
+        juce::Path lp; lp.addEllipse (lamp);
+        juce::DropShadow (col.withAlpha (0.8f), 8, {}).drawForPath (g, lp);
+        g.setColour (col); g.fillPath (lp);
+        g.setFont (ledFont (11.0f));
+        g.drawFittedText (txt, stat.withTrimmedLeft (16).toNearestInt(), juce::Justification::centredLeft, 1, 0.7f);
+        // name + role
+        g.setColour (pal::paint); g.setFont (tex::stencil (17.0f).withExtraKerningFactor (0.08f));
+        g.drawText (isMaster ? juce::String ("THE MASTER") : s->name.toUpperCase(), row.removeFromTop (row.getHeight() * 0.5f).toNearestInt(), juce::Justification::bottomLeft);
+        g.setColour (pal::paintDim); g.setFont (bodyFont (11.0f));
+        g.drawFittedText (isMaster ? juce::String ("Measures the result, and does the tone EQ + a safety limiter.") : s->role, row.toNearestInt(), juce::Justification::topLeft, 1, 0.8f);
+    }
+    if (! onTracks.isEmpty())
+    {
+        r.removeFromTop (4);
+        g.setColour (pal::rustLight); g.setFont (tex::stencil (12.0f).withExtraKerningFactor (0.08f));
+        g.drawText ("ON YOUR TRACKS", r.removeFromTop (15).toNearestInt(), juce::Justification::centredLeft);
+        g.setColour (pal::paint.withAlpha (0.85f)); g.setFont (bodyFont (11.0f));
+        g.drawFittedText (onTracks.joinIntoString ("\n"), r.toNearestInt(), juce::Justification::topLeft, 4, 0.8f);
+    }
+}
+
+void ChangeLog::setEntries (const std::vector<MasterProcessor::LogEntry>& entries, int width, const juce::String& emptyText)
+{
+    laid.clear();
+    empty = emptyText;
+    int y = 4;
+    for (auto& e : entries)
+    {
+        Laid l; l.e = e;
+        juce::AttributedString a;
+        a.append (e.detail, bodyFont (12.0f), pal::paint.withAlpha (0.9f));
+        a.setWordWrap (juce::AttributedString::byWord);
+        l.body.createLayout (a, (float) width - 40.0f);
+        l.bodyH = (int) std::ceil (l.body.getHeight());
+        l.y = y; l.h = 8 + 18 + l.bodyH + 8;
+        y += l.h;
+        laid.push_back (std::move (l));
+    }
+    setSize (width, juce::jmax (y + 4, 40));
+    repaint();
+}
+
+void ChangeLog::paint (juce::Graphics& g)
+{
+    if (laid.empty())
+    {
+        g.setColour (pal::paintDim); g.setFont (bodyFont (12.5f));
+        g.drawFittedText (empty, getLocalBounds().reduced (10, 8), juce::Justification::topLeft, 3);
+        return;
+    }
+    for (auto& l : laid)
+    {
+        auto r = juce::Rectangle<float> (0, (float) l.y, (float) getWidth(), (float) l.h);
+        const auto c = l.e.confirmed ? juce::Colour (0xff9aa86a) : pal::hazard;
+        auto lamp = juce::Rectangle<float> (8, 8).withCentre ({ 12, r.getY() + 17 });
+        g.setColour (c); g.fillEllipse (lamp);
+        auto in = r.withTrimmedLeft (26).withTrimmedRight (8).withTrimmedTop (8);
+        auto head = in.removeFromTop (18);
+        g.setColour (pal::signalHot); g.setFont (tex::stencil (13.5f).withExtraKerningFactor (0.08f));
+        const auto tag = l.e.plugin.toUpperCase();
+        const float tw = (float) juce::GlyphArrangement::getStringWidthInt (tex::stencil (13.5f).withExtraKerningFactor (0.08f), tag) + 12.0f;
+        g.drawText (tag, head.removeFromLeft (tw).toNearestInt(), juce::Justification::centredLeft);
+        g.setColour (pal::paint); g.setFont (tex::stencil (13.5f).withExtraKerningFactor (0.06f));
+        g.drawFittedText (l.e.title, head.toNearestInt(), juce::Justification::centredLeft, 1, 0.7f);
+        l.body.draw (g, in.removeFromTop ((float) l.bodyH));
+        g.setColour (juce::Colour (0x30d6c7a6)); g.drawHorizontalLine ((int) r.getBottom() - 1, 6, (float) getWidth() - 6);
+    }
+}
+
 //==============================================================================
 void FixInfo::paint (juce::Graphics& g)
 {
@@ -880,7 +987,7 @@ MasterEditor::MasterEditor (MasterProcessor& p) : AudioProcessorEditor (&p), pro
     // ---- FIX IT page
     autoFixButton.setName ("autofix");
     autoFixButton.setTooltip ("Sets every fix below from what The Master heard, aiming at the genre. Play the whole song first. Press it again after another play-through to fine-tune the loudness.");
-    autoFixButton.onClick = [this] { runAutoFix(); };
+    autoFixButton.onClick = [this] { if (proc.isPluginMode()) runChainButton(); else runAutoFix(); };
     fixOnButton.setTooltip ("Turns all the fixes on or off. Flip it to compare with your original mix.");
     fixOnAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, "fixOn", fixOnButton);
     matchButton.setTooltip ("Plays the fixed version back at the same loudness as your mix, so you judge the tone and punch, not just 'louder'. Turn it off before you bounce!");
@@ -931,6 +1038,29 @@ MasterEditor::MasterEditor (MasterProcessor& p) : AudioProcessorEditor (&p), pro
     fixInfo.setInterceptsMouseClicks (false, false);
     for (auto& k : knobs) { fixComps.push_back (&k->slider); fixComps.push_back (&k->label); }
     for (auto& sct : sections) { fixComps.push_back (&sct->on); fixComps.push_back (&sct->autoBtn); fixComps.push_back (&sct->why); }
+
+    // ---- MY PLUGINS
+    modeSel.setTooltip ("BUILT-IN FIXES: The Master corrects the mix itself.  MY PLUGINS: The Master prescribes Castle Danger plugins for the master bus and sets them for you.");
+    modeSel.setIndex (p.isPluginMode() ? 1 : 0);
+    modeSel.onChange = [this] (int i) { proc.setPluginMode (i == 1); lastSnap = -1; lastChainSig = -1; updateVisibility(); buildBackdrop(); repaint(); };
+    addChildComponent (modeSel);
+    newRxButton.setTooltip ("Start over: make a new prescription from the analysis (take the plugins off the bus, or bypass them, and play the song first).");
+    newRxButton.onClick = [this]
+    {
+        const auto err = proc.prescribe();
+        if (err.isNotEmpty()) showMessage ("NOT YET", err);
+        lastChainSig = -1;
+    };
+    hintLabel.setFont (bodyFont (12.0f));
+    hintLabel.setColour (juce::Label::textColourId, pal::paint);
+    hintLabel.setJustificationType (juce::Justification::topLeft);
+    hintLabel.setInterceptsMouseClicks (false, false);
+    chainView.setInterceptsMouseClicks (false, false);
+    logViewport.setViewedComponent (&changeLog, false);
+    logViewport.setScrollBarsShown (true, false);
+    logViewport.setScrollBarThickness (10);
+    chainComps = { &chainView, &logViewport, &newRxButton, &hintLabel };
+    for (auto* c : chainComps) addChildComponent (*c);
 
     refreshGenres();
     setSize (1100, 744);
@@ -993,11 +1123,35 @@ void MasterEditor::setPage (int pg)
 {
     page = pg;
     pageTabs.setIndex (pg);
-    for (auto* c : analyzeComps) c->setVisible (pg == 0);
-    for (auto* c : fixComps) c->setVisible (pg == 1);
-    reportSel.setVisible (pg == 0);
+    updateVisibility();
     buildBackdrop();
     repaint();
+}
+
+void MasterEditor::updateVisibility()
+{
+    const bool chainMode = proc.isPluginMode();
+    for (auto* c : analyzeComps) c->setVisible (page == 0);
+    for (auto* c : fixComps) c->setVisible (page == 1 && ! chainMode);
+    for (auto* c : chainComps) c->setVisible (page == 1 && chainMode);
+    reportSel.setVisible (page == 0);
+    modeSel.setVisible (page == 1);
+    autoFixButton.setVisible (page == 1);
+    fixInfo.setVisible (page == 1);
+    newRxButton.setVisible (page == 1 && chainMode && proc.getChainStage() >= 1);
+    autoFixButton.setButtonText (! chainMode ? "AUTO FIX" : (proc.getChainStage() == 0 ? "PRESCRIBE" : proc.getChainStage() == 1 ? "APPLY" : "REFINE"));
+}
+
+void MasterEditor::runChainButton()
+{
+    juce::String err;
+    const int stage = proc.getChainStage();
+    if (stage == 0) err = proc.prescribe();
+    else if (stage == 1) err = proc.applyChain();
+    else err = proc.refineChain();
+    if (err.isNotEmpty()) { showMessage ("NOT YET", err); return; }
+    if (stage >= 1) { reportAfter = true; reportSel.setIndex (1); }
+    lastSnap = -1; lastChainSig = -1;
 }
 
 void MasterEditor::runAutoFix()
@@ -1011,7 +1165,7 @@ void MasterEditor::runAutoFix()
 
 void MasterEditor::resized()
 {
-    backdropCache[0] = {}; backdropCache[1] = {};
+    for (auto& b : backdropCache) b = {};
     lamp.setBounds (16, 12, 88, 88);
     logoArea  = { 112, 6, 410, 76 };
     badgeArea = { 548, 14, 260, 86 };
@@ -1028,6 +1182,12 @@ void MasterEditor::resized()
     tabsArea = { 16, 232, 1068, 42 };
     pageTabs.setBounds (24, 237, 360, 32);
     reportSel.setBounds (814, 239, 262, 28);
+    modeSel.setBounds (744, 239, 332, 28);
+    chainView.setBounds (300, 308, 772, 198);
+    logViewport.setBounds (300, 552, 772, 170);
+    changeLog.setEntries (proc.getLog(), logViewport.getWidth() - 12, {});
+    newRxButton.setBounds (28, 382, 238, 30);
+    hintLabel.setBounds (34, 420, 226, 140);
 
     // ANALYZE
     chart.setBounds (28, 306, 616, 228);
@@ -1147,6 +1307,19 @@ void MasterEditor::updateReport()
         mark (tameKnob->slider, plan.p.glue * 100.0);
         mark (widthKnob->slider, plan.p.width * 100.0);
         mark (gainKnob->slider, plan.p.gainDb);
+
+        if (proc.isPluginMode())
+        {
+            const auto& cp = proc.getChainPlan();
+            const int stage = proc.getChainStage();
+            fixInfo.before = cp.valid ? mst::advise (cp.before, gp).score : (pre.valid ? mst::advise (pre, gp).score : -1);
+            fixInfo.after = stage >= 2 && post.valid ? mst::advise (post, gp).score : -1;
+            fixInfo.cantFix = cp.valid ? cp.cantFix : juce::StringArray();
+            fixInfo.setFrom = stage == 0 ? (pre.valid ? "Ready: press PRESCRIBE." : "Play the whole song first.")
+                            : "Prescription from " + mmss (cp.seconds) + " of your mix, aiming at " + cp.genreName.toUpperCase() + "."
+                              + (stage >= 2 && ! post.valid ? juce::String ("  Play it again to score the result.") : juce::String());
+            fixInfo.repaint();
+        }
     }
 
     // detector
@@ -1218,6 +1391,40 @@ void MasterEditor::timerCallback()
         lastSnap = snap; lastGenre = choice;
         genreBar.setSelected (proc.getLibrary().indexOf (choice) >= 0 ? choice : juce::String ("auto"));
         updateReport();
+    }
+
+    // MY PLUGINS: chain status, the change log, what to do next
+    if (page == 1 && proc.isPluginMode())
+    {
+        const int sig = proc.linkVersion.load() * 31 + proc.getChainStage() * 7 + (int) (juce::Time::getMillisecondCounter() / 700);
+        if (sig != lastChainSig)
+        {
+            lastChainSig = sig;
+            const auto& cp = proc.getChainPlan();
+            chainView.hasPlan = cp.valid && proc.getChainStage() >= 1;
+            chainView.steps = proc.chainStatus();
+            chainView.onTracks = cp.onTracks;
+            chainView.orderKnown = proc.chainOrderKnown();
+            chainView.stage = proc.getChainStage();
+            chainView.repaint();
+            if (proc.linkVersion.load() != lastLinkVersion)
+            {
+                lastLinkVersion = proc.linkVersion.load();
+                changeLog.setEntries (proc.getLog(), logViewport.getWidth() - 12,
+                                      "Nothing changed yet. Every setting The Master sends to your plugins is listed here, with the reason.");
+            }
+            juce::String hint;
+            const int stage = proc.getChainStage();
+            bool allLinked = true;
+            juce::StringArray names;
+            for (auto& st : chainView.steps) { names.add (st.name.toUpperCase()); if (! st.linked) allLinked = false; }
+            if (stage == 0) hint = "1. Play the whole song with only The Master on the master bus.\n2. Press PRESCRIBE.";
+            else if (stage == 1 && ! allLinked) hint = "Put " + names.joinIntoString (", then ") + " on the master bus, in that order, BEFORE The Master. They link by themselves.";
+            else if (stage == 1) hint = "All linked. Play a few seconds to confirm the order, then press APPLY. Nothing changes until you do.";
+            else hint = "Applied. Play the song through, then press REFINE to fine-tune from what actually came out. Override anything on the plugins themselves.";
+            hintLabel.setText (hint, juce::dontSendNotification);
+            updateVisibility();
+        }
     }
 
     // FIX IT: which sections you've overridden, live gain-reduction meters
@@ -1377,7 +1584,8 @@ void MasterEditor::buildBackdrop()
     const float scale = 2.0f;
     const int W = getWidth(), H = getHeight();
     if (W <= 0 || H <= 0) return;
-    if (backdropCache[(size_t) page].isValid() && backdropCache[(size_t) page].getWidth() == (int) (W * scale)) { backdrop = backdropCache[(size_t) page]; return; }
+    const int bi = backdropIndex();
+    if (backdropCache[(size_t) bi].isValid() && backdropCache[(size_t) bi].getWidth() == (int) (W * scale)) { backdrop = backdropCache[(size_t) bi]; return; }
 
     plates.clear();
     plates.push_back ({ "REFERENCE GENRE", { 16, 138, 712, 86 }, true });
@@ -1388,6 +1596,12 @@ void MasterEditor::buildBackdrop()
         plates.push_back ({ "TONAL BALANCE  //  YOUR MIX VS THE GENRE", { 16, 282, 640, 262 } });
         plates.push_back ({ "VITALS", { 16, 554, 640, 178 } });
         plates.push_back ({ "THE VERDICT", { 666, 282, 418, 450 } });
+    }
+    else if (proc.isPluginMode())
+    {
+        plates.push_back ({ "THE CURE", { 16, 282, 262, 450 }, true });
+        plates.push_back ({ "THE PRESCRIPTION  //  YOUR MASTER BUS CHAIN", { 288, 282, 796, 236 } });
+        plates.push_back ({ "WHAT I CHANGED & WHY", { 288, 528, 796, 204 } });
     }
     else
     {
@@ -1520,7 +1734,7 @@ void MasterEditor::buildBackdrop()
     }
     std::vector<juce::Component*> wells { &soundsLike };
     if (page == 0) for (auto* c : { (juce::Component*) &chart, (juce::Component*) &vitals, (juce::Component*) &score, (juce::Component*) &viewport }) wells.push_back (c);
-    else wells.push_back (&fixInfo);
+    else { wells.push_back (&fixInfo); if (proc.isPluginMode()) { wells.push_back (&chainView); wells.push_back (&logViewport); } }
     for (auto* c : wells)
     {
         g.setColour (juce::Colours::black.withAlpha (0.7f)); g.fillRoundedRectangle (c->getBounds().toFloat().expanded (4.0f), 5.0f);
@@ -1530,6 +1744,13 @@ void MasterEditor::buildBackdrop()
         g.setColour (pal::screen); g.fillRoundedRectangle (viewport.getBounds().toFloat(), 4.0f);
         auto t = tex::distressedText ("REPORT ON", 110, 16, tex::stencil (14.0f), pal::paint, juce::Justification::centredRight, scale, 0.2f, 31, 0.12f);
         g.setOpacity (1.0f); g.drawImage (t, juce::Rectangle<float> ((float) reportSel.getX() - 118.0f, (float) reportSel.getY() + 6.0f, 110.0f, 16.0f));
+    }
+    else if (proc.isPluginMode())
+    {
+        g.setColour (pal::screen); g.fillRoundedRectangle (logViewport.getBounds().toFloat(), 4.0f);
+        g.setColour (juce::Colours::black.withAlpha (0.55f)); g.fillRoundedRectangle (hintLabel.getBounds().toFloat().expanded (6.0f, 4.0f), 4.0f);
+        auto hint = tex::distressedText ("YOUR PLUGINS.  MY SETTINGS.", 238, 14, tex::plainBold (9.5f), pal::paint.withAlpha (0.7f), juce::Justification::centred, scale, 0.15f, 89, 0.14f);
+        g.setOpacity (1.0f); g.drawImage (hint, juce::Rectangle<float> (28.0f, 305.0f, 238.0f, 14.0f));
     }
     else
     {   // EQ: stamped band names, dB scale, a dark well behind the faders
@@ -1645,7 +1866,7 @@ void MasterEditor::buildBackdrop()
         tex::distress (word, scale, 0.3f, 666);
         lg.drawImage (word, juce::Rectangle<float> (0.0f, 0.0f, (float) lw, (float) lh));
     }
-    backdropCache[(size_t) page] = backdrop;
+    backdropCache[(size_t) bi] = backdrop;
 }
 
 void MasterEditor::paint (juce::Graphics& g)

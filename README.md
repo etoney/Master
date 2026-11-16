@@ -9,6 +9,7 @@ The Master listens to the finished mix, compares it with genre profiles (what re
 - **The Verdict:** a 0-100 mix score plus FIX / CHECK / GOOD items, each with what to do and which plugin helps
 - **Profiles:** factory pack compiled in (`Profiles/factory.json`), user packs layered on top. Admins update them in bulk with `TheMasterProfiler` or by capturing references inside the DAW. See `ADMIN.txt`.
 - **FIX IT:** `Source/FixEngine.h` (the chain, transparent at neutral, constant latency) and `Source/Cure.h` (the AUTO FIX planner). The output is analysed too, so the report can show YOUR MIX vs AFTER FIXES; a second AUTO FIX fine-tunes loudness from the measured result. Overrides are ordinary automatable parameters; the AUTO plan is saved with the project so each section can be reverted.
+- **MY PLUGINS:** `Source/Chain.h` prescribes a master-bus chain of Castle Danger plugins (Chop Shop, Dominatrix) with exact settings and a reason for each; `Source/CDLink.h` (Castle Danger Link, shared with the other plugins) finds them on 127.0.0.1, checks their order from level fingerprints, and sets their controls on APPLY; REFINE fine-tunes from the measured result.
 - Analysis runs on a background thread. Live playback never waits on it; offline bounces are analysed in full. The report is saved with the project.
 
 > The factory profiles in 1.0.0 are **seed estimates**. Rebuild them from real reference songs with `TheMasterProfiler` (see `ADMIN.txt`).
