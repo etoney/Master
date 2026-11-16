@@ -49,14 +49,174 @@ MasterLookAndFeel::MasterLookAndFeel()
     setColour (juce::TooltipWindow::textColourId, pal::paint);
     setColour (juce::TooltipWindow::outlineColourId, pal::rust);
     setColour (juce::ScrollBar::thumbColourId, pal::rust);
+    setColour (juce::Slider::textBoxTextColourId, pal::paint.withAlpha (0.85f));
+    setColour (juce::Slider::textBoxOutlineColourId, juce::Colour (0xff3a2418));
+    setColour (juce::Slider::textBoxBackgroundColourId, juce::Colour (0x90000000));
+    setColour (juce::Slider::textBoxHighlightColourId, pal::rust.withAlpha (0.6f));
+    setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff0f0b09));
+    setColour (juce::TextEditor::textColourId, pal::paint);
+    setColour (juce::TextEditor::highlightColourId, pal::rust.withAlpha (0.6f));
+    setColour (juce::CaretComponent::caretColourId, pal::signalHot);
+
+    rustDisc = juce::Image (juce::Image::ARGB, 128, 128, true);
+    juce::Image::BitmapData bd (rustDisc, juce::Image::BitmapData::writeOnly);
+    for (int y = 0; y < 128; ++y)
+        for (int x = 0; x < 128; ++x)
+        {
+            const float n = tex::fbm ((float) x / 22.0f, (float) y / 22.0f, 501, 4);
+            const float a = tex::smoothstep (0.5f, 0.7f, n);
+            const auto c = tex::rustAt ((float) x * 2.0f, (float) y * 2.0f, 0.3f, 777);
+            bd.setPixelColour (x, y, juce::Colour::fromFloatRGBA (c.r, c.g, c.b, a * 0.85f));
+        }
 }
 
-juce::Font MasterLookAndFeel::getTextButtonFont (juce::TextButton&, int h) { return tex::stencil (juce::jmin (15.0f, (float) h * 0.6f)).withExtraKerningFactor (0.06f); }
+// marker for what AUTO FIX chose: slider property "auto" holds the value (absent = no marker)
+static bool autoPos (juce::Slider& s, double& proportion)
+{
+    const auto v = s.getProperties()["auto"];
+    if (v.isVoid()) return false;
+    proportion = s.valueToProportionOfLength ((double) v);
+    return true;
+}
+
+void MasterLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h, float pos,
+                                          float startAngle, float endAngle, juce::Slider& s)
+{
+    auto b = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h).reduced (3.0f);
+    const float r = std::min (b.getWidth(), b.getHeight()) * 0.5f;
+    const auto c = b.getCentre();
+    const float angle = startAngle + pos * (endAngle - startAngle);
+    const float thick = juce::jmax (2.5f, r * 0.11f);
+    const float alpha = s.isEnabled() ? 1.0f : 0.3f;
+
+    g.setColour (pal::paintDim.withAlpha (0.45f * alpha));
+    for (int i = 0; i <= 10; ++i)
+    {
+        const float a = startAngle + (float) i / 10.0f * (endAngle - startAngle) - juce::MathConstants<float>::halfPi;
+        const float r1 = r + 1.0f, r0 = r - (i % 5 == 0 ? 5.0f : 3.0f);
+        g.drawLine (c.x + std::cos (a) * r0, c.y + std::sin (a) * r0, c.x + std::cos (a) * r1, c.y + std::sin (a) * r1, i % 5 == 0 ? 1.4f : 0.9f);
+    }
+    const float ar = r - thick - 4.0f;
+    juce::Path track; track.addCentredArc (c.x, c.y, ar, ar, 0, startAngle, endAngle, true);
+    g.setColour (juce::Colour (0xff120e0c).withAlpha (alpha)); g.strokePath (track, juce::PathStrokeType (thick + 2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    g.setColour (juce::Colour (0xff3a2418).withAlpha (alpha)); g.strokePath (track, juce::PathStrokeType (thick, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    // bipolar knobs (width, gain) draw their arc from the neutral point
+    const double neutral = s.getProperties().contains ("neutral") ? s.valueToProportionOfLength ((double) s.getProperties()["neutral"]) : 0.0;
+    const float a0 = startAngle + (float) neutral * (endAngle - startAngle);
+    juce::Path val; val.addCentredArc (c.x, c.y, ar, ar, 0, std::min (a0, angle), std::max (a0, angle), true);
+    const auto arcCol = (s.isMouseOverOrDragging() ? pal::signalHot : pal::signal).withAlpha (alpha);
+    g.setColour (arcCol.withAlpha (0.25f * alpha));
+    g.strokePath (val, juce::PathStrokeType (thick + 4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    g.setColour (arcCol);
+    g.strokePath (val, juce::PathStrokeType (thick, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    double ap;
+    if (autoPos (s, ap))
+    {
+        const float aa = startAngle + (float) ap * (endAngle - startAngle) - juce::MathConstants<float>::halfPi;
+        juce::Path tri;
+        const float rr = r + 2.0f;
+        tri.addTriangle (c.x + std::cos (aa) * (rr - 7), c.y + std::sin (aa) * (rr - 7),
+                         c.x + std::cos (aa + 0.09f) * (rr + 1), c.y + std::sin (aa + 0.09f) * (rr + 1),
+                         c.x + std::cos (aa - 0.09f) * (rr + 1), c.y + std::sin (aa - 0.09f) * (rr + 1));
+        g.setColour (pal::hazard.withAlpha (alpha)); g.fillPath (tri);
+    }
+
+    const float br = ar - thick * 1.4f;
+    if (br < 4.0f) return;
+    const juce::Rectangle<float> body (c.x - br, c.y - br, br * 2, br * 2);
+    g.setColour (juce::Colours::black.withAlpha (0.55f)); g.fillEllipse (body.translated (1.5f, 2.5f));
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff6a5a4c).withAlpha (alpha), c.x - br * 0.5f, c.y - br * 0.7f,
+                                             juce::Colour (0xff17120f), c.x + br * 0.6f, c.y + br, true));
+    g.fillEllipse (body);
+    {
+        juce::Graphics::ScopedSaveState ss (g);
+        juce::Path clip; clip.addEllipse (body);
+        g.reduceClipRegion (clip);
+        const float off = (float) (((juce::uint64) (juce::pointer_sized_int) &s >> 4) % 64);
+        g.setOpacity (0.9f * alpha);
+        g.drawImage (rustDisc, body.expanded (br * 0.4f).translated (-off * 0.3f, off * 0.2f), juce::RectanglePlacement::stretchToFit);
+    }
+    g.setColour (juce::Colour (0xff0f0b09).withAlpha (0.8f));
+    for (int i = 0; i < 32; ++i)
+    {
+        const float a = (float) i / 32.0f * juce::MathConstants<float>::twoPi;
+        g.drawLine (c.x + std::cos (a) * br * 0.87f, c.y + std::sin (a) * br * 0.87f, c.x + std::cos (a) * br, c.y + std::sin (a) * br, 1.0f);
+    }
+    g.setColour (juce::Colour (0xff0b0807)); g.drawEllipse (body, 1.2f);
+    juce::Path ptr; ptr.addRoundedRectangle (-1.8f, -br * 0.92f, 3.6f, br * 0.6f, 1.2f);
+    g.setColour (juce::Colours::black.withAlpha (0.5f));
+    g.fillPath (ptr, juce::AffineTransform::rotation (angle).translated (c.x + 0.8f, c.y + 1.0f));
+    g.setColour (pal::paint.withAlpha (alpha));
+    g.fillPath (ptr, juce::AffineTransform::rotation (angle).translated (c));
+}
+
+// vertical EQ faders: a rusty slot, the move drawn from 0 dB, a stamped cap, the AUTO marker
+void MasterLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int w, int h, float pos, float, float,
+                                          juce::Slider::SliderStyle style, juce::Slider& s)
+{
+    if (style != juce::Slider::LinearVertical) { LookAndFeel_V4::drawLinearSlider (g, x, y, w, h, pos, 0, 0, style, s); return; }
+    const float alpha = s.isEnabled() ? 1.0f : 0.35f;
+    const float cx = (float) x + (float) w * 0.5f;
+    const float zeroY = (float) (y + h) - (float) s.valueToProportionOfLength (0.0) * (float) h;
+    auto slot = juce::Rectangle<float> (cx - 3.0f, (float) y, 6.0f, (float) h);
+    g.setColour (juce::Colour (0xff0c0908)); g.fillRoundedRectangle (slot.expanded (1.0f, 4.0f), 3.0f);
+    g.setColour (juce::Colour (0xff3a2418)); g.drawRoundedRectangle (slot.expanded (1.0f, 4.0f), 3.0f, 1.0f);
+    // ticks every 2 dB
+    g.setColour (pal::paintDim.withAlpha (0.35f * alpha));
+    for (double d = s.getMinimum(); d <= s.getMaximum() + 1e-6; d += 2.0)
+    {
+        const float ty = (float) (y + h) - (float) s.valueToProportionOfLength (d) * (float) h;
+        const float len = std::abs (d) < 1e-6 ? 12.0f : 6.0f;
+        g.drawLine (cx - 7 - len, ty, cx - 7, ty, std::abs (d) < 1e-6 ? 1.4f : 0.8f);
+        g.drawLine (cx + 7, ty, cx + 7 + len, ty, std::abs (d) < 1e-6 ? 1.4f : 0.8f);
+    }
+    const float v = (float) s.getValue();
+    const auto col = (std::abs (v) < 0.05f ? pal::paintDim : (v > 0 ? pal::signalHot : pal::signal)).withAlpha (alpha);
+    g.setColour (col.withAlpha (0.85f * alpha));
+    g.fillRect (juce::Rectangle<float> (cx - 2.0f, std::min (pos, zeroY), 4.0f, std::abs (pos - zeroY)));
+    double ap;
+    if (autoPos (s, ap))
+    {
+        const float ay = (float) (y + h) - (float) ap * (float) h;
+        juce::Path tri; tri.addTriangle (cx - 15, ay - 5, cx - 15, ay + 5, cx - 8, ay);
+        juce::Path tri2; tri2.addTriangle (cx + 15, ay - 5, cx + 15, ay + 5, cx + 8, ay);
+        g.setColour (pal::hazard.withAlpha (alpha)); g.fillPath (tri); g.fillPath (tri2);
+    }
+    auto cap = juce::Rectangle<float> (cx - 13.0f, pos - 7.0f, 26.0f, 14.0f);
+    g.setColour (juce::Colours::black.withAlpha (0.55f)); g.fillRoundedRectangle (cap.translated (1.0f, 2.0f), 2.5f);
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff7a6a5a).withAlpha (alpha), cap.getX(), cap.getY(), juce::Colour (0xff221a15), cap.getX(), cap.getBottom(), false));
+    g.fillRoundedRectangle (cap, 2.5f);
+    g.setColour (s.isMouseOverOrDragging() ? pal::signalHot : juce::Colour (0xff0c0908)); g.drawRoundedRectangle (cap, 2.5f, 1.0f);
+    g.setColour (pal::paint.withAlpha (alpha)); g.fillRect (cap.getX() + 4, cap.getCentreY() - 0.75f, cap.getWidth() - 8, 1.5f);
+}
+
+juce::Font MasterLookAndFeel::getTextButtonFont (juce::TextButton& b, int h)
+{
+    if (b.getName() == "autofix") return tex::stencil (26.0f).withExtraKerningFactor (0.12f);
+    return tex::stencil (juce::jmin (15.0f, (float) h * 0.6f)).withExtraKerningFactor (0.06f);
+}
 juce::Font MasterLookAndFeel::getPopupMenuFont() { return tex::plainBold (14.0f); }
 
 void MasterLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& b, const juce::Colour&, bool hi, bool down)
 {
     auto r = b.getLocalBounds().toFloat().reduced (0.5f);
+    if (b.getName() == "autofix")
+    {
+        juce::Path pth; pth.addRoundedRectangle (r, 4.0f);
+        juce::DropShadow (pal::signalHot.withAlpha (hi ? 0.7f : 0.45f), 14, {}).drawForPath (g, pth);
+        g.setGradientFill (juce::ColourGradient (down ? juce::Colour (0xff5a1a0c) : juce::Colour (0xffa83218), 0, r.getY(), juce::Colour (0xff3a0e06), 0, r.getBottom(), false));
+        g.fillRoundedRectangle (r, 4.0f);
+        g.setColour (hi ? juce::Colour (0xffffc090) : pal::signalHot); g.drawRoundedRectangle (r, 4.0f, 1.8f);
+        return;
+    }
+    if ((bool) b.getProperties()["overridden"])
+    {
+        g.setColour (juce::Colours::black.withAlpha (0.55f)); g.fillRoundedRectangle (r.translated (1.0f, 1.5f), 3.0f);
+        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff6a5010), 0, r.getY(), juce::Colour (0xff2a1e06), 0, r.getBottom(), false));
+        g.fillRoundedRectangle (r, 3.0f);
+        g.setColour (hi ? juce::Colour (0xffffe080) : pal::hazard); g.drawRoundedRectangle (r, 3.0f, 1.3f);
+        return;
+    }
     g.setColour (juce::Colours::black.withAlpha (0.55f)); g.fillRoundedRectangle (r.translated (1.0f, 1.5f), 3.0f);
     g.setGradientFill (juce::ColourGradient (down ? pal::rustDeep : juce::Colour (0xff3a2a20), 0, r.getY(),
                                              down ? juce::Colour (0xff2a120a) : juce::Colour (0xff17110e), 0, r.getBottom(), false));
@@ -89,8 +249,8 @@ void MasterLookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton&
     g.setColour (juce::Colours::black.withAlpha (0.7f)); g.drawEllipse (led, 1.0f);
 
     g.setColour (on ? pal::paint : pal::paintDim);
-    g.setFont (tex::stencil (15.0f).withExtraKerningFactor (0.1f));
-    g.drawFittedText (b.getButtonText(), r.withTrimmedLeft (r.getHeight() * 1.0f).withTrimmedRight (6).toNearestInt(), juce::Justification::centredLeft, 1, 0.6f);
+    g.setFont (r.getWidth() < 120.0f ? tex::stencil (12.5f).withExtraKerningFactor (0.03f) : tex::stencil (15.0f).withExtraKerningFactor (0.1f));
+    g.drawFittedText (b.getButtonText(), r.withTrimmedLeft (r.getHeight() * 0.95f).withTrimmedRight (4).toNearestInt(), juce::Justification::centredLeft, 1, 0.6f);
 }
 
 void MasterLookAndFeel::drawScrollbar (juce::Graphics& g, juce::ScrollBar&, int x, int y, int w, int h, bool vertical,
@@ -169,6 +329,115 @@ void GenreBar::paint (juce::Graphics& g)
         g.setColour (det && ! on ? pal::hazard : (on ? pal::paint : pal::paintDim.withAlpha (0.7f)));
         g.setFont (tex::plainBold (9.0f).withExtraKerningFactor (0.1f));
         g.drawFittedText (det && ids[i] != "auto" ? juce::String ("SOUNDS LIKE THIS") : parts[1], tr.toNearestInt(), juce::Justification::centredTop, 1, 0.6f);
+    }
+}
+
+
+//==============================================================================
+Selector::Selector (juce::RangedAudioParameter* p, juce::StringArray l, float fs) : labels (std::move (l)), fontSize (fs)
+{
+    if (p != nullptr)
+    {
+        att = std::make_unique<juce::ParameterAttachment> (*p, [this] (float v) { index = juce::roundToInt (v); repaint(); if (onChange) onChange (index); });
+        att->sendInitialUpdate();
+    }
+}
+
+int Selector::segmentAt (juce::Point<int> p) const
+{
+    if (labels.isEmpty()) return -1;
+    return juce::jlimit (0, labels.size() - 1, p.x * labels.size() / juce::jmax (1, getWidth()));
+}
+
+void Selector::mouseDown (const juce::MouseEvent& e)
+{
+    const int i = segmentAt (e.getPosition());
+    if (i < 0) return;
+    if (att != nullptr) att->setValueAsCompleteGesture ((float) i);
+    else { index = i; repaint(); if (onChange) onChange (i); }
+}
+
+void Selector::mouseMove (const juce::MouseEvent& e) { const int h = segmentAt (e.getPosition()); if (h != hover) { hover = h; repaint(); } }
+
+void Selector::paint (juce::Graphics& g)
+{
+    const int n = labels.size();
+    const float sw = (float) getWidth() / (float) juce::jmax (1, n);
+    const float alpha = isEnabled() ? 1.0f : 0.4f;
+    for (int i = 0; i < n; ++i)
+    {
+        auto r = juce::Rectangle<float> ((float) i * sw, 0, sw, (float) getHeight()).reduced (2.5f, 2.0f);
+        const bool on = i == index, hi = i == hover;
+        g.setColour (juce::Colours::black.withAlpha (0.6f)); g.fillRoundedRectangle (r.translated (1.5f, 2.0f), 3.0f);
+        if (on)
+        {
+            juce::Path pth; pth.addRoundedRectangle (r, 3.0f);
+            juce::DropShadow (pal::signalHot.withAlpha (0.4f * alpha), 10, {}).drawForPath (g, pth);
+            g.setGradientFill (juce::ColourGradient (juce::Colour (0xff8a2a14).withAlpha (alpha), r.getCentreX(), r.getY(), juce::Colour (0xff3a0e06), r.getCentreX(), r.getBottom(), false));
+        }
+        else
+            g.setGradientFill (juce::ColourGradient (hi ? juce::Colour (0xff43332a) : juce::Colour (0xff332822), r.getCentreX(), r.getY(),
+                                                     juce::Colour (0xff15100d), r.getCentreX(), r.getBottom(), false));
+        g.fillRoundedRectangle (r, 3.0f);
+        g.setColour ((on ? pal::signalHot : (hi ? pal::rustLight : juce::Colour (0xff5a3420))).withAlpha (alpha));
+        g.drawRoundedRectangle (r, 3.0f, on ? 1.5f : 1.1f);
+        g.setColour ((on ? juce::Colour (0xfffff0d8) : pal::paint.withAlpha (0.85f)).withMultipliedAlpha (alpha));
+        g.setFont (tex::stencil (fontSize).withExtraKerningFactor (0.08f));
+        g.drawFittedText (labels[i], r.reduced (4, 1).toNearestInt(), juce::Justification::centred, 1, 0.6f);
+    }
+}
+
+//==============================================================================
+void FixInfo::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat();
+    g.setColour (pal::screen); g.fillRoundedRectangle (r, 4.0f);
+    g.setColour (juce::Colour (0xff3a2418)); g.drawRoundedRectangle (r.reduced (0.5f), 4.0f, 1.0f);
+    r = r.reduced (10, 8);
+
+    // BEFORE -> AFTER
+    auto top = r.removeFromTop (54);
+    auto scoreCol = [] (int sc) { return sc < 0 ? pal::paintDim.withAlpha (0.4f) : (sc >= 80 ? juce::Colour (0xff9aa86a) : sc >= 60 ? pal::hazard : pal::signalHot); };
+    auto half = top.getWidth() * 0.5f;
+    auto bA = top.removeFromLeft (half), aA = top;
+    for (int k = 0; k < 2; ++k)
+    {
+        auto a = k == 0 ? bA : aA;
+        const int sc = k == 0 ? before : after;
+        g.setColour (pal::paintDim); g.setFont (tex::plainBold (9.0f).withExtraKerningFactor (0.1f));
+        g.drawText (k == 0 ? "YOUR MIX" : "AFTER FIXES", a.removeFromTop (12).toNearestInt(), juce::Justification::centred);
+        g.setColour (scoreCol (sc)); g.setFont (tex::stencil (36.0f));
+        g.drawText (sc >= 0 ? juce::String (sc) : juce::String ("--"), a.toNearestInt(), juce::Justification::centred);
+    }
+    g.setColour (pal::paintDim); g.setFont (tex::stencil (22.0f));
+    g.drawText (">", juce::Rectangle<float> (bA.getRight() - 10, bA.getY() + 12, 20, 40).toNearestInt(), juce::Justification::centred);
+
+    r.removeFromTop (6);
+    g.setColour (pal::paint.withAlpha (0.85f)); g.setFont (bodyFont (11.5f));
+    g.drawFittedText (setFrom, r.removeFromTop (30).toNearestInt(), juce::Justification::topLeft, 2, 0.9f);
+
+    // live meters
+    g.setFont (ledFont (10.5f));
+    auto meter = [&] (const juce::String& name, float v, const juce::String& txt)
+    {
+        auto row = r.removeFromTop (16);
+        g.setColour (pal::paintDim); g.drawText (name, row.removeFromLeft (78).toNearestInt(), juce::Justification::centredLeft);
+        auto bar = row.removeFromLeft (row.getWidth() - 52).reduced (0, 5);
+        g.setColour (juce::Colour (0xff1e1612)); g.fillRect (bar);
+        g.setColour (fixOn ? pal::signal : pal::paintDim.withAlpha (0.4f)); g.fillRect (bar.withWidth (bar.getWidth() * juce::jlimit (0.0f, 1.0f, v)));
+        g.setColour (pal::paint); g.drawText (txt, row.toNearestInt(), juce::Justification::centredRight);
+    };
+    meter ("LIMITER", limGr / 8.0f, "-" + juce::String (limGr, 1) + " dB");
+    meter ("PEAK TAMER", tameGr / 6.0f, "-" + juce::String (tameGr, 1) + " dB");
+    meter ("LEVELER", std::abs (levDb) / 6.0f, (levDb >= 0 ? "+" : "") + juce::String (levDb, 1) + " dB");
+
+    if (! cantFix.isEmpty())
+    {
+        r.removeFromTop (6);
+        g.setColour (pal::signalHot); g.setFont (tex::stencil (12.5f).withExtraKerningFactor (0.06f));
+        g.drawText ("FIX THESE IN THE MIX", r.removeFromTop (16).toNearestInt(), juce::Justification::centredLeft);
+        g.setColour (pal::paint.withAlpha (0.85f)); g.setFont (bodyFont (11.0f));
+        g.drawFittedText ("- " + cantFix.joinIntoString ("\n- "), r.toNearestInt(), juce::Justification::topLeft, 8, 0.9f);
     }
 }
 
@@ -584,23 +853,88 @@ MasterEditor::MasterEditor (MasterProcessor& p) : AudioProcessorEditor (&p), pro
     profilesButton.onClick = [this] { showProfilesMenu(); };
     copyButton.setTooltip ("Copy the whole report as text, to paste into notes or send to someone.");
     copyButton.onClick = [this] { copyReport(); };
-    for (auto* b : { &resetButton, &profilesButton, &copyButton }) addAndMakeVisible (*b);
+    for (auto* b : { &resetButton, &profilesButton }) addAndMakeVisible (*b);
 
     genreBar.setTooltip ("Which genre to compare your mix with. AUTO picks the closest match for you; the yellow lamp shows what your mix sounds like.");
     genreBar.onPick = [this] (const juce::String& id) { proc.setGenreChoice (id); genreBar.setSelected (id); lastSnap = -1; };
     addAndMakeVisible (genreBar);
-    for (auto* c : std::initializer_list<juce::Component*> { &soundsLike, &chart, &vitals, &score })
-    {
-        addAndMakeVisible (*c);
+    addAndMakeVisible (soundsLike);
+    soundsLike.setInterceptsMouseClicks (false, false);
+
+    pageTabs.setTooltip ("ANALYZE: the report.  FIX IT: let The Master correct what it found, and override anything you like.");
+    pageTabs.onChange = [this] (int i) { setPage (i); };
+    addAndMakeVisible (pageTabs);
+    reportSel.setTooltip ("Report on your mix as it comes in, or on what comes out after the fixes.");
+    reportSel.onChange = [this] (int i) { reportAfter = i == 1; lastSnap = -1; };
+    addAndMakeVisible (reportSel);
+
+    // ---- ANALYZE page
+    for (auto* c : std::initializer_list<juce::Component*> { &chart, &vitals, &score })
         c->setInterceptsMouseClicks (false, false);
-    }
     viewport.setViewedComponent (&verdict, false);
     viewport.setScrollBarsShown (true, false);
     viewport.setScrollBarThickness (10);
-    addAndMakeVisible (viewport);
+    analyzeComps = { &chart, &vitals, &score, &viewport, &copyButton };
+    for (auto* c : analyzeComps) addChildComponent (*c);
+
+    // ---- FIX IT page
+    autoFixButton.setName ("autofix");
+    autoFixButton.setTooltip ("Sets every fix below from what The Master heard, aiming at the genre. Play the whole song first. Press it again after another play-through to fine-tune the loudness.");
+    autoFixButton.onClick = [this] { runAutoFix(); };
+    fixOnButton.setTooltip ("Turns all the fixes on or off. Flip it to compare with your original mix.");
+    fixOnAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, "fixOn", fixOnButton);
+    matchButton.setTooltip ("Plays the fixed version back at the same loudness as your mix, so you judge the tone and punch, not just 'louder'. Turn it off before you bounce!");
+    matchAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, "match", matchButton);
+    amountKnob = &makeKnob ("amount", "AMOUNT", "How much of the EQ, leveler, peak tamer and width moves to use. 100 = as set.");
+
+    auto& eqS = makeSection (MasterProcessor::secEq, "eqOn", "Tone match EQ on/off.");
+    eqS.why.setText ("", juce::dontSendNotification);
+    for (int b = 0; b < mst::kNumBands; ++b)
+    {
+        auto sl = std::make_unique<juce::Slider> (juce::Slider::LinearVertical, juce::Slider::TextBoxBelow);
+        sl->setTextBoxStyle (juce::Slider::TextBoxBelow, false, 54, 16);
+        sl->setTooltip (juce::String (mst::bandDefs()[(size_t) b].label) + " (" + mst::bandDefs()[(size_t) b].range + " Hz). Yellow arrows: what AUTO FIX chose. Drag to override, double-click for 0 dB.");
+        sl->setDoubleClickReturnValue (true, 0.0);
+        sl->getProperties().set ("neutral", 0.0);
+        eqAtts[(size_t) b] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (p.apvts, "eq" + juce::String (b), *sl);
+        sl->textFromValueFunction = [] (double v) { return (v > 0 ? "+" : "") + juce::String (v, 1); };
+        addChildComponent (*sl);
+        fixComps.push_back (sl.get());
+        eqSliders[(size_t) b] = std::move (sl);
+    }
+
+    makeSection (MasterProcessor::secDyn, "dynOn", "Leveler + peak tamer on/off.");
+    levelerKnob = &makeKnob ("leveler", "LEVELER", "Rides the level slowly: lifts quiet sections toward the song's average, turns sudden loud entrances down. For big level swings between verse and chorus.");
+    tameKnob = &makeKnob ("glue", "TAME PEAKS", "Look-ahead limiting of the peaks (usually kick and snare) that stick out of the mix. The threshold follows the music. Lowers PLR so the mix can get louder without sounding squashed.");
+
+    makeSection (MasterProcessor::secStereo, "stereoOn", "Stereo fixes on/off.");
+    widthKnob = &makeKnob ("width", "WIDTH", "Width above 120 Hz. 100 = unchanged. The low end is never widened.");
+    widthKnob->slider.getProperties().set ("neutral", 100.0);
+    bassMonoButton.setTooltip ("Makes everything below 120 Hz mono, so kick and bass sit dead centre.");
+    bassMonoAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, "bassMono", bassMonoButton);
+
+    makeSection (MasterProcessor::secHum, "humOn", "Hum notches on/off.");
+    humSel = std::make_unique<Selector> (p.apvts.getParameter ("humHz"), juce::StringArray { "50 Hz", "60 Hz" }, 15.0f);
+    humSel->setTooltip ("Mains hum is 60 Hz in North America, 50 Hz in most of the rest of the world. AUTO FIX picks the one it heard.");
+
+    makeSection (MasterProcessor::secLoud, "loudOn", "Loudness + limiter on/off.");
+    gainKnob = &makeKnob ("gain", "GAIN", "How hard the mix is pushed into the true-peak limiter. AUTO FIX aims for the genre's loudness.");
+    gainKnob->slider.getProperties().set ("neutral", 0.0);
+    ceilSel = std::make_unique<Selector> (p.apvts.getParameter ("ceiling"), juce::StringArray { "-1.0", "-2.0", "-0.3" }, 14.0f);
+    ceilSel->setTooltip ("True-peak ceiling. -1.0 dBTP: streaming (Spotify, Apple Music, YouTube). -2.0: extra safe for MP3/AAC. -0.3: CD / download masters.");
+
+    for (auto* c : std::initializer_list<juce::Component*> { &autoFixButton, &fixOnButton, &matchButton, &bassMonoButton, humSel.get(), ceilSel.get(), &fixInfo })
+    {
+        addChildComponent (*c);
+        fixComps.push_back (c);
+    }
+    fixInfo.setInterceptsMouseClicks (false, false);
+    for (auto& k : knobs) { fixComps.push_back (&k->slider); fixComps.push_back (&k->label); }
+    for (auto& sct : sections) { fixComps.push_back (&sct->on); fixComps.push_back (&sct->autoBtn); fixComps.push_back (&sct->why); }
 
     refreshGenres();
-    setSize (1100, 700);
+    setSize (1100, 744);
+    setPage (0);
     refreshNow();
     startTimerHz (15);
 }
@@ -611,9 +945,73 @@ MasterEditor::~MasterEditor()
     setLookAndFeel (nullptr);
 }
 
+MasterEditor::Knob& MasterEditor::makeKnob (const juce::String& id, const juce::String& text, const juce::String& tip)
+{
+    auto k = std::make_unique<Knob>();
+    k->label.setText (text, juce::dontSendNotification);
+    k->label.setJustificationType (juce::Justification::centred);
+    k->label.setFont (tex::stencil (14.0f).withExtraKerningFactor (0.08f));
+    k->label.setColour (juce::Label::textColourId, pal::paint);
+    k->label.setMinimumHorizontalScale (0.6f);
+    k->slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 70, 17);
+    k->slider.setMouseDragSensitivity (220);
+    k->slider.setTooltip (tip);
+    k->att = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (proc.apvts, id, k->slider);
+    auto* prm = proc.apvts.getParameter (id);
+    k->slider.setDoubleClickReturnValue (true, prm->convertFrom0to1 (prm->getDefaultValue()));
+    addChildComponent (k->slider);
+    addChildComponent (k->label);
+    knobs.push_back (std::move (k));
+    return *knobs.back();
+}
+
+void MasterEditor::placeKnob (Knob& k, juce::Rectangle<int> cell)
+{
+    k.label.setBounds (cell.removeFromTop (18));
+    k.slider.setBounds (cell);
+}
+
+MasterEditor::FixSection& MasterEditor::makeSection (MasterProcessor::Section id, const juce::String& onParam, const juce::String& tip)
+{
+    auto sct = std::make_unique<FixSection>();
+    sct->id = id;
+    sct->on.setTooltip (tip);
+    sct->onAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (proc.apvts, onParam, sct->on);
+    sct->autoBtn.setTooltip ("Yellow = you've changed this section. Click to put it back to what AUTO FIX chose.");
+    sct->autoBtn.onClick = [this, id] { proc.revertToAuto (id); };
+    sct->why.setFont (bodyFont (11.5f));
+    sct->why.setColour (juce::Label::textColourId, pal::paintDim);
+    sct->why.setJustificationType (juce::Justification::topLeft);
+    sct->why.setMinimumHorizontalScale (1.0f);
+    sct->why.setInterceptsMouseClicks (false, false);
+    for (auto* c : std::initializer_list<juce::Component*> { &sct->on, &sct->autoBtn, &sct->why }) addChildComponent (*c);
+    sections.push_back (std::move (sct));
+    return *sections.back();
+}
+
+void MasterEditor::setPage (int pg)
+{
+    page = pg;
+    pageTabs.setIndex (pg);
+    for (auto* c : analyzeComps) c->setVisible (pg == 0);
+    for (auto* c : fixComps) c->setVisible (pg == 1);
+    reportSel.setVisible (pg == 0);
+    buildBackdrop();
+    repaint();
+}
+
+void MasterEditor::runAutoFix()
+{
+    const auto err = proc.applyAutoFix();
+    if (err.isNotEmpty()) { showMessage ("NOT YET", err); return; }
+    reportAfter = true;
+    reportSel.setIndex (1);
+    lastSnap = -1;
+}
+
 void MasterEditor::resized()
 {
-    plates.clear();
+    backdropCache[0] = {}; backdropCache[1] = {};
     lamp.setBounds (16, 12, 88, 88);
     logoArea  = { 112, 6, 410, 76 };
     badgeArea = { 548, 14, 260, 86 };
@@ -625,22 +1023,76 @@ void MasterEditor::resized()
     statusArea = { 832, 70, 244, 22 };
     stripeArea = { 0, 110, getWidth(), 18 };
 
-    plates.push_back ({ "REFERENCE GENRE", { 16, 138, 712, 86 }, true });
     genreBar.setBounds (26, 162, 692, 54);
-    plates.push_back ({ "SOUNDS LIKE", { 738, 138, 346, 86 } });
     soundsLike.setBounds (750, 162, 322, 54);
+    tabsArea = { 16, 232, 1068, 42 };
+    pageTabs.setBounds (24, 237, 360, 32);
+    reportSel.setBounds (814, 239, 262, 28);
 
-    plates.push_back ({ "TONAL BALANCE  //  YOUR MIX VS THE GENRE", { 16, 234, 640, 262 } });
-    chart.setBounds (28, 258, 616, 228);
-    plates.push_back ({ "VITALS", { 16, 506, 640, 178 } });
-    vitals.setBounds (28, 530, 616, 144);
-    plates.push_back ({ "THE VERDICT", { 666, 234, 418, 450 } });
-    copyButton.setBounds (1022, 238, 54, 20);
-    score.setBounds (678, 258, 394, 74);
-    viewport.setBounds (678, 340, 394, 334);
+    // ANALYZE
+    chart.setBounds (28, 306, 616, 228);
+    vitals.setBounds (28, 578, 616, 144);
+    copyButton.setBounds (1022, 286, 54, 20);
+    score.setBounds (678, 306, 394, 74);
+    viewport.setBounds (678, 388, 394, 334);
     verdict.setItems (report.items, viewport.getWidth() - 12);
 
+    layoutFixPage();
     buildBackdrop();
+}
+
+void MasterEditor::layoutFixPage()
+{
+    // left column: THE CURE
+    autoFixButton.setBounds (28, 324, 238, 52);
+    fixOnButton.setBounds (28, 382, 238, 30);
+    matchButton.setBounds (28, 416, 238, 30);
+    placeKnob (*amountKnob, { 28, 452, 238, 110 });
+    fixInfo.setBounds (28, 568, 238, 154);
+
+    auto header = [] (juce::Rectangle<int> plate, FixSection& s)
+    {
+        s.plate = plate;
+        if (plate.getWidth() > 400)
+        {
+            s.on.setBounds (plate.getRight() - 72, plate.getY() + 4, 64, 22);
+            s.autoBtn.setBounds (plate.getRight() - 132, plate.getY() + 5, 54, 20);
+        }
+        else
+        {   // small plates: title on top, AUTO + ON underneath
+            s.autoBtn.setBounds (plate.getX() + 12, plate.getY() + 26, 60, 22);
+            s.on.setBounds (plate.getRight() - 76, plate.getY() + 25, 64, 24);
+        }
+    };
+    // EQ
+    const juce::Rectangle<int> eqPlate { 288, 282, 796, 236 };
+    header (eqPlate, *sections[0]);
+    const float cw = 772.0f / (float) mst::kNumBands;
+    for (int b = 0; b < mst::kNumBands; ++b)
+        eqSliders[(size_t) b]->setBounds (300 + (int) (cw * (float) b), 330, (int) cw, 150);
+    sections[0]->why.setBounds (300, 494, 772, 20);
+
+    // bottom row
+    const int y = 528, h = 204, w = 191;
+    const std::array<int, 4> xs { 288, 490, 692, 893 };
+    header ({ xs[0], y, w, h }, *sections[1]);
+    placeKnob (*levelerKnob, { xs[0] + 8, y + 54, 86, 96 });
+    placeKnob (*tameKnob, { xs[0] + 97, y + 54, 86, 96 });
+    sections[1]->why.setBounds (xs[0] + 10, y + 152, w - 20, 48);
+
+    header ({ xs[1], y, w, h }, *sections[2]);
+    placeKnob (*widthKnob, { xs[1] + 6, y + 54, 86, 96 });
+    bassMonoButton.setBounds (xs[1] + 94, y + 88, 90, 30);
+    sections[2]->why.setBounds (xs[1] + 10, y + 152, w - 20, 48);
+
+    header ({ xs[2], y, w, h }, *sections[3]);
+    humSel->setBounds (xs[2] + 12, y + 64, w - 24, 40);
+    sections[3]->why.setBounds (xs[2] + 10, y + 114, w - 20, 86);
+
+    header ({ xs[3], y, w, h }, *sections[4]);
+    placeKnob (*gainKnob, { xs[3] + 6, y + 54, 86, 96 });
+    ceilSel->setBounds (xs[3] + 96, y + 88, 88, 30);
+    sections[4]->why.setBounds (xs[3] + 10, y + 152, w - 20, 48);
 }
 
 //==============================================================================
@@ -662,15 +1114,43 @@ void MasterEditor::refreshGenres()
 void MasterEditor::updateReport()
 {
     bool saved = false;
-    const auto fx = proc.getDisplayFeatures (saved);
-    const auto target = proc.resolveTarget (fx);
+    const auto pre = proc.getDisplayFeatures (saved);
+    const auto post = proc.getAfterFeatures();
+    // the genre is always judged from your mix as it comes in
+    const auto target = proc.resolveTarget (pre);
     const auto& genres = proc.getLibrary().genres();
     if (target.index < 0 || target.index >= (int) genres.size()) return;
     const auto& gp = genres[(size_t) target.index];
+    const auto fx = reportAfter ? post : pre;
+    if (reportAfter) saved = false;
     report = mst::advise (fx, gp);
 
+    // FIX IT page: scores, the plan's reasons, AUTO markers
+    {
+        fixInfo.before = pre.valid ? mst::advise (pre, gp).score : -1;
+        fixInfo.after = post.valid && proc.isFixOn() ? mst::advise (post, gp).score : -1;
+        const auto& plan = proc.getPlan();
+        fixInfo.cantFix = plan.valid ? plan.cantFix : juce::StringArray();
+        if (! plan.valid) fixInfo.setFrom = pre.valid ? "Press AUTO FIX to correct what The Master heard." : "Play the whole song, then press AUTO FIX.";
+        else fixInfo.setFrom = "Set from " + mmss (plan.seconds) + " of your mix, aiming at " + plan.genreName.toUpperCase() + "."
+                             + (post.valid && proc.isFixOn() ? juce::String() : juce::String ("  Play it again to score the result."));
+        fixInfo.repaint();
+        const juce::String none = "Press AUTO FIX, or set this section yourself.";
+        sections[0]->why.setText (plan.valid ? plan.whyEq : none, juce::dontSendNotification);
+        sections[1]->why.setText (plan.valid ? plan.whyDyn : none, juce::dontSendNotification);
+        sections[2]->why.setText (plan.valid ? plan.whyStereo : none, juce::dontSendNotification);
+        sections[3]->why.setText (plan.valid ? plan.whyHum : none, juce::dontSendNotification);
+        sections[4]->why.setText (plan.valid ? plan.whyLoud : none, juce::dontSendNotification);
+        auto mark = [&] (juce::Slider& sl, double v) { if (plan.valid) sl.getProperties().set ("auto", v); else sl.getProperties().remove ("auto"); sl.repaint(); };
+        for (int b = 0; b < mst::kNumBands; ++b) mark (*eqSliders[(size_t) b], plan.p.eq[(size_t) b]);
+        mark (levelerKnob->slider, plan.p.leveler * 100.0);
+        mark (tameKnob->slider, plan.p.glue * 100.0);
+        mark (widthKnob->slider, plan.p.width * 100.0);
+        mark (gainKnob->slider, plan.p.gainDb);
+    }
+
     // detector
-    soundsLike.ready = fx.valid && ! target.guesses.empty();
+    soundsLike.ready = pre.valid && ! target.guesses.empty();   // the genre is about your mix, not the fixed output
     soundsLike.locked = ! target.automatic;
     soundsLike.lockedName = gp.name;
     if (soundsLike.ready)
@@ -721,7 +1201,7 @@ void MasterEditor::updateReport()
     viewport.setViewPosition (pos);
 
     // status line
-    const auto t = mmss (fx.seconds);
+    const auto t = mmss (pre.seconds);
     if (saved) statusText = "SAVED REPORT (" + t + ")  //  PLAY TO START A NEW ONE";
     else if (proc.getWorker().getSampleRate() <= 0) statusText = "WAITING FOR THE HOST TO START AUDIO";
     else statusText = juce::String (proc.isListening() ? "LISTENING" : "PAUSED") + "  //  " + t + " ANALYSED";
@@ -731,13 +1211,31 @@ void MasterEditor::updateReport()
 void MasterEditor::timerCallback()
 {
     if (proc.getLibrary().version.load() != lastLib) { refreshGenres(); lastSnap = -1; }
-    const int snap = proc.getWorker().getSnapshotVersion();
+    const int snap = proc.getWorker().getSnapshotVersion() * 7919 + proc.getPostWorker().getSnapshotVersion();
     const auto choice = proc.getGenreChoice();
     if (snap != lastSnap || choice != lastGenre)
     {
         lastSnap = snap; lastGenre = choice;
         genreBar.setSelected (proc.getLibrary().indexOf (choice) >= 0 ? choice : juce::String ("auto"));
         updateReport();
+    }
+
+    // FIX IT: which sections you've overridden, live gain-reduction meters
+    if (page == 1)
+    {
+        const bool planOk = proc.getPlan().valid;
+        for (auto& sct : sections)
+        {
+            const bool ov = planOk && proc.isOverridden (sct->id);
+            if ((bool) sct->autoBtn.getProperties()["overridden"] != ov) { sct->autoBtn.getProperties().set ("overridden", ov); sct->autoBtn.repaint(); }
+            sct->autoBtn.setEnabled (planOk);
+        }
+        auto& ch = proc.getChain();
+        fixInfo.limGr = std::max (ch.getLimiterGr(), fixInfo.limGr * 0.85f);
+        fixInfo.tameGr = std::max (ch.getTamerGr(), fixInfo.tameGr * 0.85f);
+        fixInfo.levDb = ch.getLevelerDb();
+        fixInfo.fixOn = proc.isFixOn();
+        fixInfo.repaint();
     }
 
     // lamp glows with the music while listening
@@ -879,6 +1377,27 @@ void MasterEditor::buildBackdrop()
     const float scale = 2.0f;
     const int W = getWidth(), H = getHeight();
     if (W <= 0 || H <= 0) return;
+    if (backdropCache[(size_t) page].isValid() && backdropCache[(size_t) page].getWidth() == (int) (W * scale)) { backdrop = backdropCache[(size_t) page]; return; }
+
+    plates.clear();
+    plates.push_back ({ "REFERENCE GENRE", { 16, 138, 712, 86 }, true });
+    plates.push_back ({ "SOUNDS LIKE", { 738, 138, 346, 86 } });
+    plates.push_back ({ "", tabsArea });
+    if (page == 0)
+    {
+        plates.push_back ({ "TONAL BALANCE  //  YOUR MIX VS THE GENRE", { 16, 282, 640, 262 } });
+        plates.push_back ({ "VITALS", { 16, 554, 640, 178 } });
+        plates.push_back ({ "THE VERDICT", { 666, 282, 418, 450 } });
+    }
+    else
+    {
+        plates.push_back ({ "THE CURE", { 16, 282, 262, 450 }, true });
+        for (auto& sct : sections)
+        {
+            static const char* names[] = { "TONE MATCH EQ", "DYNAMICS", "STEREO", "HUM", "LOUDNESS" };
+            plates.push_back ({ names[(int) sct->id], sct->plate });
+        }
+    }
     const int PW = (int) ((float) W * scale), PH = (int) ((float) H * scale);
     juce::Image base (juce::Image::RGB, W, H, false);
 
@@ -993,17 +1512,37 @@ void MasterEditor::buildBackdrop()
     {
         const auto p = s.bounds.toFloat();
         plateFrame (p, s.hot);
+        if (s.title.isEmpty()) continue;
         auto title = tex::distressedText (s.title, s.bounds.getWidth() - 40, 18, tex::stencil (15.0f), s.hot ? pal::signalHot : pal::paint,
                                           juce::Justification::centredLeft, scale, 0.2f, seed++, 0.12f);
         g.setOpacity (1.0f);
         g.drawImage (title, juce::Rectangle<float> (p.getX() + 14, p.getY() + 3, (float) s.bounds.getWidth() - 40, 18.0f));
     }
-    for (juce::Component* c : { (juce::Component*) &soundsLike, (juce::Component*) &chart, (juce::Component*) &vitals, (juce::Component*) &score, (juce::Component*) &viewport })
+    std::vector<juce::Component*> wells { &soundsLike };
+    if (page == 0) for (auto* c : { (juce::Component*) &chart, (juce::Component*) &vitals, (juce::Component*) &score, (juce::Component*) &viewport }) wells.push_back (c);
+    else wells.push_back (&fixInfo);
+    for (auto* c : wells)
     {
         g.setColour (juce::Colours::black.withAlpha (0.7f)); g.fillRoundedRectangle (c->getBounds().toFloat().expanded (4.0f), 5.0f);
     }
+    if (page == 0)
     {   // the verdict list sits in a dark well
         g.setColour (pal::screen); g.fillRoundedRectangle (viewport.getBounds().toFloat(), 4.0f);
+        auto t = tex::distressedText ("REPORT ON", 110, 16, tex::stencil (14.0f), pal::paint, juce::Justification::centredRight, scale, 0.2f, 31, 0.12f);
+        g.setOpacity (1.0f); g.drawImage (t, juce::Rectangle<float> ((float) reportSel.getX() - 118.0f, (float) reportSel.getY() + 6.0f, 110.0f, 16.0f));
+    }
+    else
+    {   // EQ: stamped band names, dB scale, a dark well behind the faders
+        auto well = juce::Rectangle<float> (296.0f, 308.0f, 780.0f, 182.0f);
+        g.setColour (juce::Colours::black.withAlpha (0.55f)); g.fillRoundedRectangle (well, 5.0f);
+        const float cw = 772.0f / (float) mst::kNumBands;
+        for (int b = 0; b < mst::kNumBands; ++b)
+        {
+            auto t = tex::distressedText (mst::bandDefs()[(size_t) b].label, (int) cw, 14, tex::stencil (11.5f), pal::paint, juce::Justification::centred, scale, 0.15f, 70 + b, 0.06f);
+            g.setOpacity (1.0f); g.drawImage (t, juce::Rectangle<float> (300.0f + cw * (float) b, 313.0f, cw, 14.0f));
+        }
+        auto hint = tex::distressedText ("ONE BUTTON.  OVERRIDE ANYTHING.", 238, 14, tex::plainBold (9.5f), pal::paint.withAlpha (0.7f), juce::Justification::centred, scale, 0.15f, 88, 0.14f);
+        g.setOpacity (1.0f); g.drawImage (hint, juce::Rectangle<float> (28.0f, 305.0f, 238.0f, 14.0f));
     }
 
     // ANALYSIS plate (LISTEN / RESET / PROFILES)
@@ -1106,6 +1645,7 @@ void MasterEditor::buildBackdrop()
         tex::distress (word, scale, 0.3f, 666);
         lg.drawImage (word, juce::Rectangle<float> (0.0f, 0.0f, (float) lw, (float) lh));
     }
+    backdropCache[(size_t) page] = backdrop;
 }
 
 void MasterEditor::paint (juce::Graphics& g)

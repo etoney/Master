@@ -8,8 +8,11 @@ genre usually measure, and tells you what to fix, in plain English. Where one
 of our plugins does the job (Dominatrix, Chop Shop, Flatliner, BuzzKill) it
 tells you which one and how to set it.
 
-It never changes your audio. It passes straight through with zero latency, so
-it can stay on while you work.
+It has two pages:
+  ANALYZE   the report. Your audio passes through untouched.
+  FIX IT    press AUTO FIX and The Master corrects what it found: tone, peaks,
+            level swings, stereo, hum and loudness. Every correction is a
+            normal control you can override.
 
 
 -------------------------------------------------------------------------------
@@ -20,8 +23,10 @@ HOW TO USE IT
   2. Press RESET, then play the whole song (or at least 30 seconds of the
      loudest chorus). An offline bounce/export works too: every sample is
      analysed even when the bounce runs faster than real time.
-  3. Read THE VERDICT. Fix the red items first, then the yellow ones.
+  3. Read THE VERDICT. Fix the red items first, then the yellow ones,
+     in your mix, or let FIX IT do it (see below).
   4. Change something, press RESET and play it again.
+  REPORT ON switches the report between YOUR MIX and AFTER FIXES.
 
 The report is saved with your project. When you reopen the project you'll see
 the last report until you play the song again.
@@ -95,6 +100,56 @@ THE VERDICT
     loudness for the genre, true peaks, digital clipping, over-compression
     or spiky peaks, big level swings, stereo width and phase, stereo bass,
     each of the ten tonal bands, and 50/60 Hz hum in the quiet parts.
+
+
+-------------------------------------------------------------------------------
+FIX IT  (automatic corrections, with override)
+-------------------------------------------------------------------------------
+  1. Play the whole song (ANALYZE page) so The Master has heard it.
+  2. Go to FIX IT and press AUTO FIX. Every section below gets set for you,
+     aiming at the genre. The report switches to AFTER FIXES.
+  3. Play the song again. THE CURE shows YOUR MIX score > AFTER FIXES score.
+  4. Press AUTO FIX once more after that play-through: it measures what came
+     out and fine-tunes the loudness to land on target.
+  5. Override anything you like (see below). Then bounce.
+
+  FIXES ON     all fixes on/off. Flip it to compare with your original.
+  MATCH LEVELS plays the fixed version back at your mix's loudness, so you
+               judge tone and punch, not just "louder". TURN IT OFF BEFORE YOU
+               BOUNCE, or you'll lose the loudness.
+  AMOUNT       how much of the EQ, leveler, peak tamer and width moves to
+               use. 100 % = as set.
+
+  OVERRIDING
+    Every knob and fader works like normal. Yellow arrows/markers show what
+    AUTO FIX chose. When you move something, that section's AUTO button
+    turns yellow; click it to put the section back. Each section's ON switch
+    turns it off entirely. Pressing AUTO FIX again resets everything.
+    All settings save with your project and can be automated.
+
+  TONE MATCH EQ  ten faders, the same bands as the analysis. AUTO FIX pulls
+                 each band toward the genre (up to 6 dB, leaving a little of
+                 your mix's character) without changing the overall level.
+  DYNAMICS       LEVELER: slowly lifts quiet sections, turns sudden loud
+                 entrances down (for big level swings).
+                 TAME PEAKS: look-ahead limiting of the peaks that stick out
+                 of the mix (usually kick and snare); the threshold follows
+                 the music.
+  STEREO         WIDTH above 120 Hz (100 % = unchanged); BASS MONO makes
+                 everything below 120 Hz mono.
+  HUM            notches 50 or 60 Hz mains hum and 2 harmonics. BuzzKill on
+                 the guitar/bass tracks is the better fix: it doesn't touch
+                 the bass notes.
+  LOUDNESS       GAIN pushes the mix into a true-peak limiter at the
+                 CEILING: -1.0 dBTP for streaming, -2.0 extra safe for
+                 MP3/AAC, -0.3 for CD/download masters.
+
+  What AUTO FIX can't do (listed under FIX THESE IN THE MIX):
+    clipping that's already in the mix, a mix that's already over-squashed,
+    and out-of-phase tracks. Those have to be fixed at the source.
+
+  Latency: with or without fixes, The Master delays the audio by about
+  8 ms (reported to your DAW, which compensates automatically).
 
 
 -------------------------------------------------------------------------------

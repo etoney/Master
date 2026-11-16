@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "Advisor.h"
+#include "Cure.h"
 
 // Lock-free hand-off from the audio thread to a low-priority analysis thread, so the
 // master bus never waits on an FFT. Audio passes through untouched (zero latency).
@@ -38,11 +39,12 @@ private:
     std::vector<float> scratchL, scratchR;
 };
 
-class MasterProcessor : public juce::AudioProcessor
+class MasterProcessor : public juce::AudioProcessor,
+                        private juce::AudioProcessorValueTreeState::Listener
 {
 public:
     MasterProcessor();
-    ~MasterProcessor() override = default;
+    ~MasterProcessor() override;
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
     void releaseResources() override {}
@@ -69,12 +71,28 @@ public:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
     juce::AudioProcessorValueTreeState apvts;
 
-    // ---- analysis
+    // ---- analysis: 'worker' hears your mix as it comes in, 'postWorker' hears the result
+    // after the fixes (reset whenever a fix setting changes, so it always matches them)
     AnalysisWorker& getWorker() { return worker; }
+    AnalysisWorker& getPostWorker() { return postWorker; }
     void resetAnalysis();
     // what the report should show: the live analysis, or the one saved with the project
-    // until enough new audio has come in
+    // until enough new audio has come in. after = the corrected output.
     mst::Features getDisplayFeatures (bool& fromSavedProject) const;
+    mst::Features getAfterFeatures() const { mst::Features f; postWorker.getSnapshot (f); return f; }
+    bool isFixOn() const { return apvts.getRawParameterValue ("fixOn")->load() > 0.5f; }
+
+    // ---- AUTO FIX
+    // Works out the corrections from what's been heard and sets every fix control.
+    // Returns an empty string or the reason it couldn't.
+    juce::String applyAutoFix();
+    enum Section { secEq = 0, secDyn, secStereo, secHum, secLoud };
+    void revertToAuto (Section);              // undo your overrides in one section
+    bool isOverridden (Section) const;        // differs from what AUTO FIX set
+    const mst::FixPlan& getPlan() const { return plan; }
+    mst::FixParams currentFixParams() const;
+    mst::FixChain& getChain() { return chain; }
+    static juce::StringArray fixParamIds();
     bool isListening() const { return apvts.getRawParameterValue ("listen")->load() > 0.5f; }
     std::atomic<float> inPeak { 0.0f };
 
@@ -88,7 +106,15 @@ public:
     Target resolveTarget (const mst::Features&) const;
 
 private:
-    AnalysisWorker worker;
+    void parameterChanged (const juce::String&, float) override;
+    void setParam (const juce::String& id, float value);
+    void applySection (Section, const mst::FixParams&);
+
+    AnalysisWorker worker, postWorker;
+    mst::FixChain chain;
+    mst::FixPlan plan;
+    int maxBlock = 512;
+    std::vector<float> monoR;
     mst::ProfileLibrary library;
     juce::String genreChoice { "auto" };
     mst::Features savedFeatures;   // restored from the project

@@ -293,6 +293,120 @@ int main (int argc, char** argv)
         check (! r.ready && r.items.size() == 1 && r.items[0].title == "PLAY YOUR SONG", "no audio yet -> how to start");
     }
 
+
+    // ---------------- fix chain
+    {
+        auto run = [&] (const mst::FixParams& fp, const Gen& g, double secs, std::vector<float>* outL = nullptr, std::vector<float>* outR = nullptr)
+        {
+            mst::FixChain ch;
+            ch.prepare (SR, 512);
+            ch.setParams (fp);
+            mst::MixAnalysis a; a.prepare (SR);
+            std::vector<float> l (512), r (512);
+            const int64_t total = (int64_t) (secs * SR);
+            for (int64_t pos = 0; pos < total; pos += 512)
+            {
+                for (int i = 0; i < 512; ++i) { l[(size_t) i] = g (pos + i, 0); r[(size_t) i] = g (pos + i, 1); }
+                ch.process (l.data(), r.data(), 512, [] (const float*, const float*, int) {});
+                a.process (l.data(), r.data(), 512);
+                if (outL) outL->insert (outL->end(), l.begin(), l.end());
+                if (outR) outR->insert (outR->end(), r.begin(), r.end());
+            }
+            return std::make_pair (a.compute(), ch.latency());
+        };
+        Pink pl, pr;
+        auto pink = [&] (int64_t n, int ch) { return 0.5f * (ch == 0 ? pl.next (noise (n)) : pr.next (noise (n + 99991))); };
+
+        mst::FixParams neutral; neutral.on = true;
+        neutral.eqOn = neutral.dynOn = neutral.stereoOn = neutral.humOn = true; neutral.loudOn = false;
+        std::vector<float> ol;
+        auto dm = drumMix (0.6f);
+        auto [nf, lat] = run (neutral, dm, 3.0, &ol);
+        float diff = 0;
+        for (size_t i = 0; i < ol.size(); ++i) if ((int) i >= lat) diff = std::max (diff, std::abs (ol[i] - dm ((int64_t) i - lat, 0)));
+        mst::FixParams allNeutral; allNeutral.on = true; allNeutral.eqOn = allNeutral.dynOn = allNeutral.stereoOn = true;
+        ol.clear();
+        run (allNeutral, dm, 3.0, &ol);
+        diff = 0;
+        for (size_t i = 0; i < ol.size(); ++i) if ((int) i >= lat) diff = std::max (diff, std::abs (ol[i] - dm ((int64_t) i - lat, 0)));
+        check (diff < 1e-5f, juce::String::formatted ("every fix at its neutral setting is transparent (max diff %.2g)", diff));
+
+        auto base = run (mst::FixParams {}, pink, 12.0).first;
+        mst::FixParams eqp; eqp.on = eqp.eqOn = true; eqp.eq[3] = 6.0f; eqp.eq[8] = -6.0f;
+        auto e = run (eqp, pink, 12.0).first;
+        const float upLm = e.band[3] - base.band[3], dnSh = e.band[8] - base.band[8];
+        check (upLm > 3.5f && dnSh < -3.5f, juce::String::formatted ("EQ +6 LOW MID / -6 SHEEN moves those bands (%+.1f / %+.1f dB share)", upLm, dnSh));
+        auto half = eqp; half.amount = 0.5f;
+        auto e2 = run (half, pink, 12.0).first;
+        check (e2.band[3] - base.band[3] < upLm * 0.7f && e2.band[3] - base.band[3] > upLm * 0.3f, "AMOUNT 50 % does about half");
+
+        mst::FixParams loud; loud.on = loud.loudOn = true; loud.gainDb = 10.0f; loud.ceilingDb = -1.0f;
+        auto d0 = run (mst::FixParams {}, drumMix (0.9f), 10.0).first;
+        auto d1 = run (loud, drumMix (0.9f), 10.0).first;
+        check (d1.truePeak <= -1.0f, juce::String::formatted ("limiter holds -1 dBTP with +10 dB of gain (%.2f dBTP)", d1.truePeak));
+        check (d1.lufs - d0.lufs > 4.0f, juce::String::formatted ("LOUDNESS gain makes it louder (%+.1f LU)", d1.lufs - d0.lufs));
+        loud.ceilingDb = -2.0f;
+        check (run (loud, drumMix (0.9f), 6.0).first.truePeak <= -1.9f, "-2 dBTP ceiling holds");
+
+        mst::FixParams bm; bm.on = bm.stereoOn = true; bm.bassMono = true;
+        auto stBass = [] (int64_t n, int ch) { const double t = (double) n / SR; return (float) (0.3 * std::sin (juce::MathConstants<double>::twoPi * 60.0 * t + (ch ? 1.6 : 0.0)) + 0.1 * std::sin (juce::MathConstants<double>::twoPi * 2000.0 * t + (ch ? 0.7 : 0.0))); };
+        auto b0 = run (mst::FixParams {}, stBass, 4.0).first, b1 = run (bm, stBass, 4.0).first;
+        check (b0.lowCorrelation < 0.1f && b1.lowCorrelation > 0.97f, juce::String::formatted ("BASS MONO centres the low end (%.2f -> %.2f)", b0.lowCorrelation, b1.lowCorrelation));
+        mst::FixParams wide; wide.on = wide.stereoOn = true; wide.width = 1.5f;
+        Pink ql, qr;
+        auto pink2 = [&] (int64_t n, int ch) { const float m = 0.3f * ql.next (noise (n)); const float sd = 0.1f * qr.next (noise (n + 7)); return ch == 0 ? m + sd : m - sd; };
+        auto w0 = run (mst::FixParams {}, pink2, 6.0).first;
+        auto w1 = run (wide, pink2, 6.0).first;
+        check (w1.width - w0.width > 2.5f && w1.width - w0.width < 4.5f, juce::String::formatted ("WIDTH 150 %% widens the sides (%+.1f dB)", w1.width - w0.width));
+
+        auto humOnly = [] (int64_t n, int ch) { const double t = (double) n / SR; return (float) (0.01 * std::sin (juce::MathConstants<double>::twoPi * 60.0 * t) + 0.002 * noise (n * 3 + ch)); };
+        mst::FixParams hm; hm.on = hm.humOn = true; hm.humHz = 60;
+        std::vector<float> h0, h1;
+        run (mst::FixParams {}, humOnly, 3.0, &h0); run (hm, humOnly, 3.0, &h1);
+        auto tone = [] (const std::vector<float>& x) { double re = 0, im = 0; for (size_t i = 48000; i < x.size(); ++i) { const double ph = juce::MathConstants<double>::twoPi * 60.0 * (double) i / SR; re += x[i] * std::cos (ph); im += x[i] * std::sin (ph); } return 10.0 * std::log10 (re * re + im * im + 1e-20); };
+        check (tone (h0) - tone (h1) > 25.0, juce::String::formatted ("hum notch removes 60 Hz (%.0f dB)", tone (h0) - tone (h1)));
+
+        mst::FixParams gl; gl.on = gl.dynOn = true; gl.glue = 0.6f;
+        auto g0 = run (mst::FixParams {}, drumMix (0.7f), 10.0).first, g1 = run (gl, drumMix (0.7f), 10.0).first;
+        check (g1.plr < g0.plr - 0.8f && std::abs (g1.lufs - g0.lufs) < 2.5f, juce::String::formatted ("GLUE reduces peak-to-loudness (%.1f -> %.1f dB) and keeps the level (%+.1f)", g0.plr, g1.plr, g1.lufs - g0.lufs));
+        mst::FixParams lv; lv.on = lv.dynOn = true; lv.leveler = 0.7f;
+        auto steps = [] (int64_t n, int) { const float a = (n / (int64_t) (8 * SR)) % 2 == 0 ? 0.03f : 0.2f; return a * (float) std::sin (juce::MathConstants<double>::twoPi * 440.0 * (double) n / SR); };
+        auto l0 = run (mst::FixParams {}, steps, 64.0).first, l1 = run (lv, steps, 64.0).first;
+        check (l1.lra < l0.lra - 3.0f, juce::String::formatted ("LEVELER shrinks big level swings (%.1f -> %.1f LU)", l0.lra, l1.lra));
+
+        mst::FixParams mt = loud; mt.match = true; mt.ceilingDb = -1.0f;
+        auto m1 = run (mt, drumMix (0.5f), 16.0).first;
+        auto m0 = run (mst::FixParams {}, drumMix (0.5f), 16.0).first;
+        check (std::abs (m1.lufs - m0.lufs) < 1.0f, juce::String::formatted ("MATCH plays the fixed mix back at the input's loudness (%+.2f LU)", m1.lufs - m0.lufs));
+    }
+
+    // ---------------- AUTO FIX planner
+    {
+        const auto& rock = factory.genres[0];
+        auto bad = meansOf (rock);
+        bad.lufs = -13.0f; bad.truePeak = -2.0f; bad.plr = 11.0f;
+        bad.band[3] += 5.0f; bad.band[6] -= 4.0f;
+        float t = 0; for (auto v : bad.band) t += std::pow (10.0f, v / 10.0f);
+        for (auto& v : bad.band) v -= 10.0f * std::log10 (t);
+        bad.lowCorrelation = 0.6f; bad.humSeconds = 3; bad.humHz = 50; bad.lra = rock.stat (mst::fLra).mean + 5.0f;
+        auto plan = mst::planFixes (bad, nullptr, 0, false, rock);
+        check (plan.valid && plan.p.eqOn && plan.p.eq[3] < -1.5f && plan.p.eq[6] > 1.5f, juce::String::formatted ("plan cuts the mud and lifts presence (%+.1f / %+.1f dB)", plan.p.eq[3], plan.p.eq[6]));
+        check (plan.p.loudOn && plan.p.gainDb > 3.0f && plan.p.ceilingDb == -1.0f, juce::String::formatted ("plan adds loudness (%+.1f dB) with a -1 dBTP ceiling", plan.p.gainDb));
+        check (plan.p.stereoOn && plan.p.bassMono && plan.p.humOn && plan.p.humHz == 50 && plan.p.dynOn && plan.p.leveler > 0 && plan.p.glue > 0,
+               "plan: bass mono, 50 Hz hum notch, glue and leveler");
+        auto good = mst::planFixes (meansOf (rock), nullptr, 0, false, rock);
+        bool flat = ! good.p.eqOn && ! good.p.dynOn && ! good.p.stereoOn && ! good.p.humOn && std::abs (good.p.gainDb) < 1.0f;
+        check (flat, "a mix that's already on target gets (almost) nothing");
+        auto squashed = meansOf (rock); squashed.plr = 4.0f; squashed.lufs = -12.0f;
+        auto sp = mst::planFixes (squashed, nullptr, 0, false, rock);
+        check (sp.p.gainDb <= 0.0f && sp.cantFix.size() > 0, "an over-squashed mix gets no extra gain and a 'fix it in the mix' note");
+        auto after = meansOf (rock); after.lufs = rock.stat (mst::fLufs).mean - 1.5f;
+        auto ref = mst::planFixes (bad, &after, 6.0f, true, rock);
+        check (std::abs (ref.p.gainDb - 7.5f) < 0.11f, juce::String::formatted ("second AUTO FIX fine-tunes the gain from the measured result (6.0 -> %.1f dB)", ref.p.gainDb));
+        auto rt = mst::FixPlan::fromVar (juce::JSON::parse (juce::JSON::toString (plan.toVar())));
+        check (rt.valid && std::abs (rt.p.eq[3] - plan.p.eq[3]) < 1e-4f && rt.p.humHz == 50 && rt.whyEq == plan.whyEq, "plan survives a save/load");
+    }
+
     // ---------------- processor
     {
         MasterProcessor p;
@@ -303,15 +417,15 @@ int main (int argc, char** argv)
         float maxDiff = 0;
         auto g = sine (0.1f, 1000.0f);
         int64_t pos = 0;
+        const int lat = p.getLatencySamples();
         for (int b = 0; b < (int) (8 * SR / 512); ++b, pos += 512)
         {
             juce::AudioBuffer<float> buf (2, 512);
             for (int i = 0; i < 512; ++i) for (int c = 0; c < 2; ++c) buf.setSample (c, i, g (pos + i, c));
-            juce::AudioBuffer<float> copy (buf);
             p.processBlock (buf, midi);
-            for (int c = 0; c < 2; ++c) for (int i = 0; i < 512; ++i) maxDiff = std::max (maxDiff, std::abs (buf.getSample (c, i) - copy.getSample (c, i)));
+            for (int c = 0; c < 2; ++c) for (int i = 0; i < 512; ++i) { const float d = std::abs (buf.getSample (c, i) - (pos + i - lat >= 0 ? g (pos + i - lat, c) : 0.0f)); maxDiff = std::max (maxDiff, d); }
         }
-        check (maxDiff == 0.0f && p.getLatencySamples() == 0, "audio passes through untouched, zero latency");
+        check (maxDiff < 1e-6f && lat > 0 && lat < 0.01 * SR, juce::String::formatted ("FIX off: audio passes through untouched (latency %d samples, max diff %.2g)", lat, maxDiff));
         check (p.getWorker().waitUntilIdle (5000), "background analysis keeps up");
         bool saved = true;
         auto fx = p.getDisplayFeatures (saved);
@@ -337,6 +451,71 @@ int main (int argc, char** argv)
         p.getDisplayFeatures (saved);
         mst::Features after; p.getWorker().getSnapshot (after);
         check (after.seconds == 0.0, "LISTEN off: nothing is analysed");
+    }
+
+
+    // ---------------- AUTO FIX end to end: quiet, muddy, stereo-bass mix -> better score after
+    {
+        MasterProcessor p;
+        p.setPlayConfigDetails (2, 2, SR, 512);
+        p.setNonRealtime (true);
+        p.prepareToPlay (SR, 512);
+        p.setGenreChoice ("rock");
+        juce::MidiBuffer midi;
+        mst::FBiquad mud[2]; mud[0].design (1, SR, 330.0, 1.0, 8.0); mud[1].design (2, SR, 3000.0, 0.7, -6.0);
+        auto bad = drumMix (0.25f);
+        int64_t pos = 0;
+        auto play = [&] (double secs)
+        {
+            for (int b = 0; b < (int) (secs * SR / 512); ++b, pos += 512)
+            {
+                juce::AudioBuffer<float> buf (2, 512);
+                for (int i = 0; i < 512; ++i)
+                    for (int c = 0; c < 2; ++c)
+                    {
+                        const double t = (double) (pos + i) / SR;
+                        float v = bad (pos + i, c) + 0.08f * (float) std::sin (juce::MathConstants<double>::twoPi * 55.0 * t + (c ? 2.0 : 0.0));
+                        v = mud[1].process (mud[0].process (v, c), c);
+                        buf.setSample (c, i, v);
+                    }
+                p.processBlock (buf, midi);
+            }
+            p.getWorker().waitUntilIdle (8000); p.getPostWorker().waitUntilIdle (8000);
+        };
+        play (30.0);
+        bool saved = false;
+        auto before = p.getDisplayFeatures (saved);
+        const auto& gp = p.getLibrary().genres()[(size_t) p.getLibrary().indexOf ("rock")];
+        const auto r0 = mst::advise (before, gp);
+        check (p.applyAutoFix().isEmpty() && p.isFixOn() && p.getPlan().valid, "AUTO FIX sets up the fixes");
+        check (! p.isOverridden (MasterProcessor::secEq) && ! p.isOverridden (MasterProcessor::secLoud), "fresh AUTO FIX: nothing overridden");
+        play (30.0);
+        auto after = p.getAfterFeatures();
+        const auto r1 = mst::advise (after, gp);
+        check (after.valid && r1.score > r0.score + 15, juce::String::formatted ("score after AUTO FIX: %d -> %d (loudness %.1f -> %.1f LUFS, low-end corr %.2f -> %.2f, true peak %.1f dBTP)",
+               r0.score, r1.score, before.lufs, after.lufs, before.lowCorrelation, after.lowCorrelation, after.truePeak));
+        check (after.truePeak <= -1.0f, juce::String::formatted ("fixed output respects -1 dBTP (%.2f)", after.truePeak));
+        // second press fine-tunes the loudness from what came out
+        p.applyAutoFix();
+        play (30.0);
+        auto after2 = p.getAfterFeatures();
+        check (std::abs (after2.lufs - gp.stat (mst::fLufs).mean) < std::abs (after.lufs - gp.stat (mst::fLufs).mean) + 0.2f
+               && std::abs (after2.lufs - gp.stat (mst::fLufs).mean) < 1.5f,
+               juce::String::formatted ("second AUTO FIX lands near the target (%.1f LUFS, target %.1f)", after2.lufs, gp.stat (mst::fLufs).mean));
+
+        // override + revert
+        p.apvts.getParameter ("eq3")->setValueNotifyingHost (p.apvts.getParameter ("eq3")->convertTo0to1 (4.0f));
+        check (p.isOverridden (MasterProcessor::secEq) && ! p.isOverridden (MasterProcessor::secStereo), "moving an EQ band marks only that section as overridden");
+        p.revertToAuto (MasterProcessor::secEq);
+        check (! p.isOverridden (MasterProcessor::secEq) && std::abs (p.currentFixParams().eq[3] - p.getPlan().p.eq[3]) < 0.05f, "AUTO puts the section back");
+
+        juce::MemoryBlock st; p.getStateInformation (st);
+        MasterProcessor q; q.setStateInformation (st.getData(), (int) st.getSize());
+        check (q.getPlan().valid && q.isFixOn() && std::abs (q.currentFixParams().gainDb - p.currentFixParams().gainDb) < 0.05f && ! q.isOverridden (MasterProcessor::secLoud),
+               "fixes and the AUTO plan are saved with the project");
+        check (q.getLatencySamples() == 0 || q.getLatencySamples() == p.getLatencySamples(), "latency is constant");
+        p.apvts.getParameter ("fixOn")->setValueNotifyingHost (0.0f);
+        check (p.getLatencySamples() > 0 && ! p.isFixOn(), "FIX off keeps the same latency (A/B doesn't shift timing)");
     }
 
     // ---------------- GUI
@@ -370,6 +549,23 @@ int main (int argc, char** argv)
         q.setGenreChoice ("metal");
         me->refreshNow();
         check (writePng (ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f), dir.getChildFile ("gui_metal.png")), "locked to Metal snapshot");
+        q.setGenreChoice ("auto");
+
+        // FIX IT page, before and after AUTO FIX, then with an override
+        me->showPage (1);
+        check (writePng (ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f), dir.getChildFile ("gui_fix_empty.png")), "FIX IT page before AUTO FIX");
+        me->pressAutoFix();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
+        me->refreshNow();
+        check (q.isFixOn() && q.getPlan().valid, "AUTO FIX button works from the saved report");
+        check (writePng (ed->createComponentSnapshot (ed->getLocalBounds(), true, 2.0f), dir.getChildFile ("gui_fix.png")), "FIX IT page after AUTO FIX");
+        q.apvts.getParameter ("eq6")->setValueNotifyingHost (q.apvts.getParameter ("eq6")->convertTo0to1 (6.0f));
+        q.apvts.getParameter ("width")->setValueNotifyingHost (q.apvts.getParameter ("width")->convertTo0to1 (125.0f));
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (150);
+        me->refreshNow();
+        check (writePng (ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f), dir.getChildFile ("gui_fix_override.png")), "FIX IT page with overrides");
+        q.revertToAuto (MasterProcessor::secEq); q.revertToAuto (MasterProcessor::secStereo);
+        me->showPage (0);
 
         // live audio through the real thread
         q.resetAnalysis();
@@ -398,6 +594,21 @@ int main (int argc, char** argv)
         me->refreshNow();
         juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
         check (writePng (ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f), dir.getChildFile ("gui_live.png")), "live analysis snapshot");
+        me->pressAutoFix();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (50);   // the click is delivered asynchronously
+        check (q.isFixOn(), "AUTO FIX from live audio");
+        for (int b = 0; b < (int) (20 * SR / 512); ++b, pos += 512)
+        {
+            juce::AudioBuffer<float> buf (2, 512);
+            for (int s2 = 0; s2 < 512; ++s2) for (int c = 0; c < 2; ++c) buf.setSample (c, s2, g (pos + s2, c));
+            q.processBlock (buf, midi);
+        }
+        q.getPostWorker().waitUntilIdle (5000);
+        me->refreshNow();
+        check (writePng (ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f), dir.getChildFile ("gui_live_after.png")), "report on the fixed output");
+        me->showPage (1);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
+        check (writePng (ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f), dir.getChildFile ("gui_live_fix.png")), "FIX IT page with live meters");
     }
 
     std::printf ("\n%d failure(s)\n", failures);
