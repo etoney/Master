@@ -403,7 +403,7 @@ void ChainView::paint (juce::Graphics& g)
     {
         auto rr = right;
         g.setColour (pal::rustLight); g.setFont (tex::stencil (13.0f).withExtraKerningFactor (0.08f));
-        g.drawText ("YOUR TRACKS  //  THE SERVANT", rr.removeFromTop (17).toNearestInt(), juce::Justification::centredLeft);
+        g.drawText ("YOUR TRACKS  //  SERVANT, BUZZKILL, FLATLINER", rr.removeFromTop (17).toNearestInt(), juce::Justification::centredLeft);
         if (tracks.empty())
         {
             g.setColour (pal::paintDim); g.setFont (bodyFont (11.5f));
@@ -427,8 +427,10 @@ void ChainView::paint (juce::Graphics& g)
                 g.setColour (col); g.fillEllipse (row.getX(), row.getY() + 5, 7, 7);
                 auto top = row.removeFromTop (15).withTrimmedLeft (12);
                 g.setColour (pal::paint); g.setFont (tex::stencil (12.5f).withExtraKerningFactor (0.05f));
-                const auto meta = t.role.toUpperCase() + (t.share >= 0 ? "  " + juce::String (juce::roundToInt (t.share * 100.0f)) + "%" : juce::String());
-                g.setColour (pal::paintDim); g.setFont (ledFont (10.0f));
+                const bool helper = t.kind != "servant";
+                const auto meta = helper ? mst::plugDisplayName (t.kind).toUpperCase()
+                                         : t.role.toUpperCase() + (t.share >= 0 ? "  " + juce::String (juce::roundToInt (t.share * 100.0f)) + "%" : juce::String());
+                g.setColour (helper ? pal::hazard : pal::paintDim); g.setFont (ledFont (10.0f));
                 g.drawText (meta, top.toNearestInt(), juce::Justification::centredRight);
                 g.setColour (pal::paint); g.setFont (tex::stencil (12.5f).withExtraKerningFactor (0.05f));
                 g.drawFittedText (t.name.toUpperCase(), top.withTrimmedRight (90).toNearestInt(), juce::Justification::centredLeft, 1, 0.7f);
@@ -1087,9 +1089,13 @@ MasterEditor::MasterEditor (MasterProcessor& p) : AudioProcessorEditor (&p), pro
     newRxButton.setTooltip ("Start over: make a new prescription from the analysis (take the plugins off the bus, or bypass them, and play the song first).");
     newRxButton.onClick = [this]
     {
-        const auto err = proc.prescribe();
-        if (err.isNotEmpty()) showMessage ("NOT YET", err);
-        lastChainSig = -1;
+        juce::Component::SafePointer<MasterEditor> safe (this);
+        proc.requestPrescribe ([safe] (const juce::String& err)
+        {
+            if (safe == nullptr) return;
+            if (err.isNotEmpty()) safe->showMessage ("NOT YET", err);
+            safe->lastChainSig = -1;
+        });
     };
     hintLabel.setFont (bodyFont (12.0f));
     hintLabel.setColour (juce::Label::textColourId, pal::paint);
@@ -1186,8 +1192,19 @@ void MasterEditor::runChainButton()
 {
     juce::String err;
     const int stage = proc.getChainStage();
-    if (stage == 0) err = proc.prescribe();
-    else if (stage == 1) err = proc.applyChain();
+    if (stage == 0)
+    {
+        if (proc.isWaitingForServants()) return;
+        juce::Component::SafePointer<MasterEditor> safe (this);
+        proc.requestPrescribe ([safe] (const juce::String& e)   // the listening Servants finish first
+        {
+            if (safe == nullptr) return;
+            if (e.isNotEmpty()) safe->showMessage ("NOT YET", e);
+            safe->lastSnap = -1; safe->lastChainSig = -1;
+        });
+        return;
+    }
+    if (stage == 1) err = proc.applyChain();
     else err = proc.refineChain();
     if (err.isNotEmpty()) { showMessage ("NOT YET", err); return; }
     if (stage >= 1) { reportAfter = true; reportSel.setIndex (1); }

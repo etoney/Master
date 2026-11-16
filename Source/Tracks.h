@@ -11,6 +11,7 @@
 //   3. Balance (TRIM): the lead should carry a fair share of the 500 Hz - 4 kHz range.
 //   4. Compression: if the mix's peaks stick out, the tracks that make the peaks get compressed.
 #include "Cure.h"
+#include <set>
 
 namespace mst
 {
@@ -24,7 +25,9 @@ struct TrackInfo
 
 struct TrackPlan
 {
+    juce::String kind { "servant" };            // or "buzzkill" / "flatliner" (Helpers.h)
     juce::String id, name, role;
+    juce::String note;                          // one-line summary for the helpers
     float share = 0;                            // of the mix's total power
     float gainToMix = 1;
     std::array<float, kNumBands> eq {};         // dB per band
@@ -34,6 +37,7 @@ struct TrackPlan
     std::map<juce::String, float> params;       // what goes to The Servant
     juce::String summary() const
     {
+        if (kind != "servant") return note;
         juce::StringArray s;
         int moves = 0; for (auto v : eq) if (std::abs (v) >= 0.5f) ++moves;
         if (moves > 0) s.add ("EQ " + juce::String (moves) + (moves == 1 ? " band" : " bands"));
@@ -92,7 +96,8 @@ struct TracksResult
     juce::String note;
 };
 
-inline TracksResult planTracks (const Features& mix, const GenreProfile& g, std::vector<TrackInfo> tracks, const std::vector<float>& mixSeries)
+inline TracksResult planTracks (const Features& mix, const GenreProfile& g, std::vector<TrackInfo> tracks, const std::vector<float>& mixSeries,
+                                const std::set<juce::String>& riddenByFlatliner = {})
 {
     TracksResult res;
     if (tracks.empty() || ! mix.valid) return res;
@@ -242,7 +247,7 @@ inline TracksResult planTracks (const Features& mix, const GenreProfile& g, std:
         // a lead that jumps around
         for (size_t i = 0; i < n; ++i)
         {
-            if (! roleIs (plans[i].role, { "Lead" }) || ! seriesOk) continue;
+            if (! roleIs (plans[i].role, { "Lead" }) || ! seriesOk || riddenByFlatliner.count (plans[i].id) > 0) continue;   // Flatliner rides it instead
             std::vector<float> act;
             for (auto v : ser[i]) if (v > 1e-8f) act.push_back (10.0f * std::log10 (v));
             if (act.size() < 30) continue;

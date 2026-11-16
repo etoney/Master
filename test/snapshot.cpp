@@ -460,6 +460,43 @@ int main (int argc, char** argv)
         check (res.tracks[0].params.at ("toneOn") == 1.0f && std::abs (res.tracks[0].params.at ("t1g") - res.tracks[0].eq[3]) < 0.01f, "the biggest move goes on The Servant's band 1");
     }
 
+    // ---------------- BuzzKill and Flatliner on the tracks
+    {
+        auto byId = [&] (const char* id) -> const mst::GenreProfile& { for (auto& g : factory.genres) if (g.id == id) return g; return factory.genres[0]; };
+        const auto& metal = byId ("metal");
+        const auto& pop = byId ("pop");
+        check (metal.id == "metal" && pop.id == "pop", "factory has metal and pop");
+        mst::Features mix = meansOf (metal); mix.humHz = 60; mix.humSeconds = 4.0f;
+        auto ex = [] (std::initializer_list<std::pair<const char*, juce::var>> kv) { auto* o = new juce::DynamicObject(); for (auto& [k, v] : kv) o->setProperty (k, v); return juce::var (o); };
+        mst::HelperInfo bk { "b1", "buzzkill", "Rhythm Gtr", "Rhythm", ex ({ { "floorDb", -62.0 }, { "playDb", -20.0 }, { "seconds", 30.0 }, { "learned", true } }) };
+        auto bm = mst::planBuzzKill (bk, mix, metal);
+        auto bmLead = mst::planBuzzKill ({ "b2", "buzzkill", "Lead Gtr", "Lead", bk.extra }, mix, metal);
+        auto bp = mst::planBuzzKill (bk, mix, pop);
+        check (bm.params.at ("release") >= 0.75f && bp.params.at ("release") <= 0.4f && bmLead.params.at ("release") < bm.params.at ("release"),
+               juce::String::formatted ("BuzzKill RELEASE: tight for metal rhythm (%.2f), gentler on a metal lead (%.2f), natural for pop (%.2f)",
+                                        bm.params.at ("release"), bmLead.params.at ("release"), bp.params.at ("release")));
+        check (bm.params.at ("listen") == 0.0f && bm.why.joinIntoString (" ").contains ("60 Hz hum"), "BuzzKill: HEAR REMOVED off, and the mix's hum is the reason");
+        auto noisy = bk; noisy.extra = ex ({ { "floorDb", -45.0 }, { "playDb", -20.0 }, { "seconds", 30.0 }, { "learned", true } });
+        check (mst::planBuzzKill (noisy, mix, pop).params.at ("release") > bp.params.at ("release"), "BuzzKill closes sooner on a noisy track");
+
+        mst::HelperInfo fl { "f1", "flatliner", "Lead Vox", "Lead", ex ({ { "p10", -34.0 }, { "p50", -22.0 }, { "p90", -14.0 }, { "floorDb", -70.0 }, { "seconds", 60.0 } }) };
+        auto fp = mst::planFlatliner (fl, pop);
+        auto fm = mst::planFlatliner (fl, byId ("punk"));
+        check (std::abs (fp.params.at ("target") + 22.0f) < 0.01f && fp.params.at ("range") >= 12.0f - 0.01f && fm.params.at ("range") < fp.params.at ("range"),
+               juce::String::formatted ("Flatliner: TARGET at the lead's average (%.1f), RANGE from its 20 dB swing (pop %.0f, punk %.0f)",
+                                        fp.params.at ("target"), fp.params.at ("range"), fm.params.at ("range")));
+        check (fp.params.at ("gate") < -34.0f + 0.01f && fp.params.at ("gate") > -70.0f && fp.params.at ("ride") == 1.0f,
+               juce::String::formatted ("Flatliner GATE between the gaps and the quietest words (%.0f dB)", fp.params.at ("gate")));
+        auto steady = fl; steady.extra = ex ({ { "p10", -24.0 }, { "p50", -21.0 }, { "p90", -19.0 }, { "floorDb", -70.0 }, { "seconds", 60.0 } });
+        check (mst::planFlatliner (steady, pop).params.at ("range") == 3.0f, "Flatliner: a steady lead gets only a gentle ride");
+        auto fresh = fl; fresh.extra = ex ({ { "seconds", 1.0 } });
+        check (mst::planFlatliner (fresh, pop).params.empty(), "Flatliner: nothing is set until it has heard the song");
+        mst::ChainPlan cp; cp.valid = true; cp.tracks = { bm, fp };
+        auto rt = mst::ChainPlan::fromVar (juce::JSON::parse (juce::JSON::toString (cp.toVar())));
+        check (rt.tracks.size() == 2 && rt.tracks[0].kind == "buzzkill" && rt.tracks[1].summary() == fp.summary() && rt.tracks[1].params.at ("range") == fp.params.at ("range"),
+               "BuzzKill / Flatliner plans survive a save/load");
+    }
+
     // ---------------- processor
     {
         MasterProcessor p;
@@ -592,11 +629,15 @@ int main (int argc, char** argv)
         Fake chop { "chopshop", { { "ceilingDb", 0 }, { "mode", 0 }, { "shape", 0 } } };
         Fake gtr { "servant", { { "trim", 0 }, { "comp", 0 }, { "compOn", 0 }, { "toneOn", 0 } } };
         Fake vox { "servant", { { "trim", 0 }, { "comp", 0 }, { "compOn", 0 }, { "toneOn", 0 } } };
+        Fake bkz { "buzzkill", { { "release", 0.35 }, { "listen", 1 } } };
+        Fake flt { "flatliner", { { "target", -18 }, { "range", 6 }, { "speed", 50 }, { "gate", -55 }, { "ride", 1 }, { "output", 0 } } };
+        int finishAsked = 0, finishSeqSeen = 0;
         juce::var watcherEnv;
         cdlink::Endpoint watcher ("watch", [&] (const juce::var& m) { if (m.getProperty ("kind", "").toString() == "master" && m.getProperty ("type", "").toString() == "status") watcherEnv = m.getProperty ("env", {}); }, other);
-        for (auto* f : { &dom, &chop, &gtr, &vox })
-            f->ep = std::make_unique<cdlink::Endpoint> (f->kind, [f] (const juce::var& m)
+        for (auto* f : { &dom, &chop, &gtr, &vox, &bkz, &flt })
+            f->ep = std::make_unique<cdlink::Endpoint> (f->kind, [f, &finishAsked, &finishSeqSeen] (const juce::var& m)
             {
+                if (m.getProperty ("type", "").toString() == "analyze-finish" && f->kind == "servant") { ++finishAsked; finishSeqSeen = m.getProperty ("seq", 0); return; }
                 if (m.getProperty ("type", "").toString() != "set") return;
                 f->lastSet = m; ++f->sets;
                 if (auto* o = m.getProperty ("params", {}).getDynamicObject()) for (auto& pr : o->getProperties()) f->params[pr.name.toString()] = (double) pr.value;
@@ -631,22 +672,28 @@ int main (int argc, char** argv)
         };
 
         // the Servants on two tracks report all along (their fingerprints: parts of The Master's input)
-        auto servantExtra = [] (const char* track, const char* role, std::initializer_list<double> bands)
+        auto servantExtra = [&finishSeqSeen] (const char* track, const char* role, std::initializer_list<double> bands)
         {
             auto* o = new juce::DynamicObject();
             o->setProperty ("track", track); o->setProperty ("role", role); o->setProperty ("seconds", 30.0);
+            o->setProperty ("listening", finishSeqSeen == 0); o->setProperty ("finished", finishSeqSeen);
             juce::Array<juce::var> b; double tot = 0; for (auto v : bands) { b.add (v); tot += v; }
             o->setProperty ("bandPow", b); o->setProperty ("pow", tot);
             return juce::var (o);
         };
-        const auto gtrX = servantExtra ("Rhythm Gtr", "Rhythm", { 0.001, 0.01, 0.05, 0.08, 0.04, 0.02, 0.01, 0.003, 0.001, 0.0005 });
-        const auto voxX = servantExtra ("Lead Vox", "Lead", { 0.0, 0.0005, 0.003, 0.006, 0.008, 0.009, 0.006, 0.002, 0.001, 0.0005 });
+        auto gtrX = [&] { return servantExtra ("Rhythm Gtr", "Rhythm", { 0.001, 0.01, 0.05, 0.08, 0.04, 0.02, 0.01, 0.003, 0.001, 0.0005 }); };
+        auto voxX = [&] { return servantExtra ("Lead Vox", "Lead", { 0.0, 0.0005, 0.003, 0.006, 0.008, 0.009, 0.006, 0.002, 0.001, 0.0005 }); };
+        auto plainExtra = [] (std::initializer_list<std::pair<const char*, juce::var>> kv) { auto* o = new juce::DynamicObject(); for (auto& [k, v] : kv) o->setProperty (k, v); return juce::var (o); };
+        const auto bkzX = plainExtra ({ { "track", "Rhythm Gtr" }, { "floorDb", -64.0 }, { "playDb", -18.0 }, { "seconds", 30.0 }, { "learned", true } });
+        const auto fltX = plainExtra ({ { "track", "" }, { "p10", -36.0 }, { "p50", -21.0 }, { "p90", -13.0 }, { "floorDb", -72.0 }, { "seconds", 40.0 } });   // no track name: found by its fingerprint
         struct Pinger2 : juce::Timer { std::function<void()> f; void timerCallback() override { f(); } } trackPinger;
         trackPinger.f = [&]
         {
             if (! watcherEnv.isObject()) return;
-            sendStatus (gtr, envWith (watcherEnv, "wobble", "wobble"), gtrX);
-            sendStatus (vox, envWith (watcherEnv, "spiky", "spiky"), voxX);
+            sendStatus (gtr, envWith (watcherEnv, "wobble", "wobble"), gtrX());
+            sendStatus (vox, envWith (watcherEnv, "spiky", "spiky"), voxX());
+            sendStatus (bkz, envWith (watcherEnv, "same", "same"), bkzX);
+            sendStatus (flt, envWith (watcherEnv, "same", "spiky"), fltX);   // its output feeds the vocal's Servant
         };
         trackPinger.startTimer (250);
 
@@ -670,14 +717,30 @@ int main (int argc, char** argv)
         for (int round = 0; round < 40; ++round) { play (0.3, true); pump (20); }   // a little real-time playback so the fingerprints line up
         p.getWorker().waitUntilIdle (8000);
         check (p.applyChain().isNotEmpty(), "APPLY needs a prescription first");
-        check (p.prescribe().isEmpty() && p.getChainStage() == 1, "PRESCRIBE from the analysis");
+        {
+            juce::String perr = "not called";
+            p.requestPrescribe ([&perr] (const juce::String& e) { perr = e; });
+            check (p.isWaitingForServants() || finishAsked > 0, "PRESCRIBE first asks the listening Servants to finish");
+            for (int i = 0; i < 60 && perr == "not called"; ++i) pump (50);
+            check (finishAsked == 2 && perr.isEmpty() && p.getChainStage() == 1 && ! p.isWaitingForServants(),
+                   juce::String::formatted ("both Servants finished (decided their clean-up), then PRESCRIBE from the analysis (%d asked)", finishAsked));
+        }
         const auto& cp = p.getChainPlan();
         check (cp.steps.size() == 2 && cp.steps[0].kind == "chopshop" && cp.steps[1].kind == "dominatrix", "prescription: Chop Shop, then Dominatrix, then The Master");
         check (cp.step ("dominatrix")->params.at ("outputDb") > 3.0f && cp.step ("dominatrix")->params.at ("ceiling") == 0.0f, "Dominatrix: OUTPUT drives into the -1 dB ceiling");
         check (cp.step ("chopshop")->params.at ("ceilingDb") < cp.before.samplePeak - 1.0f && cp.step ("chopshop")->params.at ("shape") == 1.0f, "Chop Shop: soft ceiling under the loudest peaks");
         bool allWhy = ! cp.changes.empty(); for (auto& c : cp.changes) allWhy = allWhy && c.why.isNotEmpty();
         check (allWhy, juce::String::formatted ("every planned change has a reason (%d changes)", (int) cp.changes.size()));
-        check (cp.tracks.size() == 2, juce::String::formatted ("the prescription includes the 2 linked Servants (%d)", (int) cp.tracks.size()));
+        int nServ = 0; const mst::TrackPlan *bkPlan = nullptr, *flPlan = nullptr;
+        for (auto& t : cp.tracks) { if (t.kind == "servant") ++nServ; if (t.kind == "buzzkill") bkPlan = &t; if (t.kind == "flatliner") flPlan = &t; }
+        check (nServ == 2, juce::String::formatted ("the prescription includes the 2 linked Servants (%d)", nServ));
+        check (bkPlan != nullptr && bkPlan->name == "Rhythm Gtr" && bkPlan->role == "Rhythm" && bkPlan->params.count ("release"), "BuzzKill planned, on the rhythm guitar's track (by name)");
+        check (flPlan != nullptr && flPlan->name == "Lead Vox" && flPlan->role == "Lead" && std::abs (flPlan->params.at ("target") + 21.0f) < 0.01f,
+               "Flatliner planned, on the lead vocal's track (found by its level fingerprint)");
+        bool genericBuzz = false; for (auto& o : cp.onTracks) if (o.startsWith ("BUZZKILL") || o.startsWith ("FLATLINER")) genericBuzz = true;
+        check (! genericBuzz, "no 'put BuzzKill / Flatliner on' advice when they're already linked");
+        bool voxJumpComp = false; for (auto& t : cp.tracks) if (t.name == "Lead Vox" && t.kind == "servant") for (auto& w : t.why) if (w.contains ("jumps")) voxJumpComp = true;
+        check (! voxJumpComp, "the lead a Flatliner rides doesn't also get The Servant's compressor for its jumps");
         check (p.applyChain().contains ("Chop Shop") , "APPLY says which plugins are missing");
 
         // 2) the plugins appear (and keep reporting 4x a second, like the real ones);
@@ -713,12 +776,20 @@ int main (int argc, char** argv)
         pump (300);
         check (gtr.sets == 1 && vox.sets == 1 && gtr.lastSet.getProperty ("params", {}).hasProperty ("trim") && gtr.lastSet.getProperty ("params", {}).hasProperty ("t1g"),
                "both Servants received their tone / comp / trim settings");
+        check (bkz.sets == 1 && bkz.params["listen"] == 0.0 && std::abs (bkz.params["release"] - bkPlan->params.at ("release")) < 0.01
+               && flt.sets == 1 && std::abs (flt.params["range"] - flPlan->params.at ("range")) < 0.01,
+               "BuzzKill and Flatliner received their settings");
         check (dom.sets == 1 && std::abs (dom.params["outputDb"] - cp.step ("dominatrix")->params.at ("outputDb")) < 0.01 && chop.sets == 1
                && std::abs (chop.params["ceilingDb"] - cp.step ("chopshop")->params.at ("ceilingDb")) < 0.01, "Dominatrix and Chop Shop received their settings");
         bool confirmed = true; int n = 0;
-        int servantEntries = 0;
-        for (auto& e : p.getLog()) { if (e.plugin != "The Master") { confirmed = confirmed && e.confirmed; ++n; } if (e.plugin == "The Servant") ++servantEntries; }
-        check (servantEntries == 2, "the log has an entry per track");
+        int servantEntries = 0, helperEntries = 0;
+        for (auto& e : p.getLog())
+        {
+            if (e.plugin != "The Master") { confirmed = confirmed && e.confirmed; ++n; }
+            if (e.plugin == "The Servant") ++servantEntries;
+            if ((e.plugin == "BuzzKill" || e.plugin == "Flatliner") && e.detail.isNotEmpty()) ++helperEntries;
+        }
+        check (servantEntries == 2 && helperEntries == 2, "the log has an entry per track plugin, each with its reasons");
         check (n > 5 && confirmed, juce::String::formatted ("the log explains every change and shows both plugins confirmed (%d entries)", n));
         bool fromShown = false;
         for (auto& e : p.getLog()) if (e.plugin == "Dominatrix" && e.title.startsWith ("OUTPUT  0.0 > ")) fromShown = true;

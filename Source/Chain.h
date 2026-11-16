@@ -2,7 +2,7 @@
 // THE MASTER - "MY PLUGINS" mode: a prescription of Castle Danger plugins for the master bus,
 // the exact settings for each, and a plain-English reason for every change.
 #include "Cure.h"
-#include "Tracks.h"
+#include "Helpers.h"
 
 namespace mst
 {
@@ -32,7 +32,7 @@ struct ChainPlan
     juce::StringArray onTracks;               // advice for individual tracks (BuzzKill, Flatliner...)
     juce::StringArray cantFix;
     Features before;                          // what the plan was made from
-    std::vector<TrackPlan> tracks;            // The Servant on each linked track
+    std::vector<TrackPlan> tracks;            // The Servant on each linked track, then BuzzKill / Flatliner
     juce::String tracksNote;
 
     const ChainStep* step (const juce::String& kind) const
@@ -77,6 +77,7 @@ struct ChainPlan
         for (auto& t : tracks)
         {
             auto* to = new juce::DynamicObject();
+            to->setProperty ("kind", t.kind); to->setProperty ("note", t.note);
             to->setProperty ("id", t.id); to->setProperty ("name", t.name); to->setProperty ("role", t.role);
             to->setProperty ("share", (double) t.share); to->setProperty ("trim", (double) t.trimDb);
             to->setProperty ("comp", (double) t.comp); to->setProperty ("compOn", t.compOn);
@@ -127,6 +128,7 @@ struct ChainPlan
             for (auto& tv : *tr)
             {
                 TrackPlan t;
+                t.kind = tv.getProperty ("kind", "servant").toString(); t.note = tv.getProperty ("note", "").toString();
                 t.id = tv.getProperty ("id", "").toString(); t.name = tv.getProperty ("name", "").toString(); t.role = tv.getProperty ("role", "").toString();
                 t.share = (float) (double) tv.getProperty ("share", 0.0); t.trimDb = (float) (double) tv.getProperty ("trim", 0.0);
                 t.comp = (float) (double) tv.getProperty ("comp", 0.0); t.compOn = tv.getProperty ("compOn", false);
@@ -145,6 +147,8 @@ inline juce::String plugDisplayName (const juce::String& kind)
     if (kind == "chopshop") return "Chop Shop";
     if (kind == "dominatrix") return "Dominatrix";
     if (kind == "servant") return "The Servant";
+    if (kind == "buzzkill") return "BuzzKill";
+    if (kind == "flatliner") return "Flatliner";
     if (kind == "master") return "The Master";
     return kind;
 }

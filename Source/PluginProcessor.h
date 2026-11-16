@@ -112,8 +112,9 @@ public:
         bool orderOk = false;        // detected and in the prescribed order
     };
     struct LogEntry { juce::String plugin, title, detail; bool confirmed = false; juce::String peerId; };
-    struct TrackStatus { juce::String peerId, name, role, summary; float share = -1; bool linked = false, planned = false; };
-    std::vector<TrackStatus> trackStatus() const;   // linked Servants + what the prescription does to each
+    struct TrackStatus { juce::String peerId, kind { "servant" }, name, role, summary; float share = -1; bool linked = false, planned = false; };
+    std::vector<TrackStatus> trackStatus() const;   // linked Servants, BuzzKills and Flatliners + what the prescription does to each
+    static bool isTrackKind (const juce::String& k) { return k == "servant" || k == "buzzkill" || k == "flatliner"; }
 
     bool isPluginMode() const { return pluginMode; }
     void setPluginMode (bool b) { pluginMode = b; }
@@ -121,6 +122,10 @@ public:
     std::vector<StepStatus> chainStatus() const;   // the prescription vs what's actually on the bus
     bool chainOrderKnown() const;                  // enough audio has played to check the order
     juce::String prescribe();                      // freezes the analysis, makes the prescription
+    // PRESCRIBE as the button does it: the Servants that are listening finish first (each decides
+    // its own resonances and clean-up), then The Master prescribes. 'done' gets prescribe()'s answer.
+    void requestPrescribe (std::function<void (const juce::String&)> done);
+    bool isWaitingForServants() const { return pendingPrescribe != nullptr; }
     juce::String applyChain();                     // sends the settings (needs every prescribed plugin linked)
     juce::String refineChain();                    // after a play-through: fine-tune from what came out
     int getChainStage() const { return chainStage; }   // 0 nothing, 1 prescribed, 2 applied
@@ -147,6 +152,12 @@ private:
     std::vector<juce::String> detectChain() const;   // peer ids feeding The Master, first .. last
     void sendSet (const juce::String& peerId, const std::map<juce::String, float>& params, const juce::String& note);
     struct LinkTimer : juce::Timer { std::function<void()> fn; void timerCallback() override { fn(); } };
+    juce::String servantOnSameTrack (const Peer& helper) const;   // by track name, else by level fingerprint
+    std::function<void (const juce::String&)> pendingPrescribe;
+    int finishSeq = 0;
+    juce::uint32 finishSentMs = 0;
+    std::set<juce::String> finishWaiting;
+    LinkTimer finishTimer;
 
     bool pluginMode = false;
     int chainStage = 0;

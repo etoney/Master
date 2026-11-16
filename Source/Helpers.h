@@ -1,0 +1,139 @@
+#pragma once
+// THE MASTER - the other Castle Danger plugins on your tracks: BUZZKILL (noise / hum) and
+// FLATLINER (rides a lead that jumps around). Each one reports what it hears on its own track;
+// The Master sets it from that, from the track's ROLE (its Servant's) and from the genre.
+#include "Tracks.h"
+
+namespace mst
+{
+struct HelperInfo
+{
+    juce::String id, kind, track, role;   // role: from The Servant on the same track, if there is one
+    juce::var extra;                      // what the plugin reported
+};
+
+inline juce::String genreKey (const GenreProfile& g)
+{
+    const auto s = (g.id.isNotEmpty() ? g.id : g.name).toLowerCase().removeCharacters (" _-");
+    return s;
+}
+
+inline TrackPlan makeHelperPlan (const HelperInfo& h, const juce::String& fallbackName)
+{
+    TrackPlan p;
+    p.kind = h.kind; p.id = h.id; p.role = h.role;
+    p.name = h.track.isNotEmpty() ? h.track : fallbackName;
+    p.share = -1.0f;
+    return p;
+}
+
+//------------------------------------------------------------------------------
+// BUZZKILL: it learns the noise by itself. The Master picks how tight it closes, from the genre
+// (metal and punk palm mutes want a hard stop, pop and ballads want tails), the part (a lead's
+// sustain breathes, a rhythm part chugs) and how noisy the track really is.
+inline TrackPlan planBuzzKill (const HelperInfo& h, const Features& mix, const GenreProfile& g)
+{
+    auto p = makeHelperPlan (h, "Guitar track");
+    const auto G = genreKey (g);
+    float rel = 0.40f;
+    juce::String style = "a natural close for " + g.name;
+    if (G == "metal")         { rel = 0.75f; style = "tight, so palm mutes stop dead, like " + g.name + " records"; }
+    else if (G == "punk")     { rel = 0.65f; style = "tight, for fast stops and chugs in " + g.name; }
+    else if (G == "hardrock") { rel = 0.60f; style = "fairly tight, for " + g.name + " riffs"; }
+    else if (G == "rock")     { rel = 0.45f; style = "between tight and natural, for " + g.name; }
+    else if (G == "pop")      { rel = 0.30f; style = "natural, so the tails fade gently, like " + g.name + " records"; }
+
+    if (roleIs (h.role, { "Lead" }))        { rel -= 0.15f; style << "; a little gentler on a lead so its sustain breathes"; }
+    else if (roleIs (h.role, { "Bass" }))   { rel -= 0.10f; style << "; a little gentler on bass so the notes don't choke"; }
+    else if (roleIs (h.role, { "Rhythm" })) { rel += 0.05f; }
+
+    const double floorDb = h.extra.getProperty ("floorDb", -120.0);
+    const double playDb = h.extra.getProperty ("playDb", -120.0);
+    const double secs = h.extra.getProperty ("seconds", 0.0);
+    const bool learned = (bool) h.extra.getProperty ("learned", false);
+    const double snr = playDb - floorDb;
+    if (learned && secs >= 2.0 && playDb > -100.0 && snr < 30.0) { rel += 0.10f; style << "; closing a bit sooner because this track is noisy"; }
+    rel = juce::jlimit (0.10f, 0.90f, std::round (rel * 20.0f) / 20.0f);
+
+    p.params["release"] = rel;
+    p.params["listen"] = 0.0f;   // HEAR REMOVED off: never print the noise by mistake
+    p.why.add ("RELEASE " + juce::String (juce::roundToInt (rel * 100.0f)) + "%: " + style + ".");
+    if (mix.humSeconds >= 1.0f)
+        p.why.add ("The mix has " + juce::String (mix.humHz) + " Hz hum in its quiet parts (" + juce::String ((int) mix.humSeconds)
+                   + " s). BuzzKill removes it here, at the source, so The Master doesn't have to notch the whole mix.");
+    if (learned && playDb > -100.0)
+        p.why.add ("This track's noise floor is " + juce::String (floorDb, 0) + " dBFS, " + juce::String (snr, 0) + " dB under your playing"
+                   + (snr < 30.0 ? ": noisy, worth gating." : "."));
+    else
+        p.why.add ("BuzzKill hasn't heard this track's noise yet: play a second of silence (nobody playing) and it learns it by itself.");
+    p.why.add ("HEAR REMOVED: OFF (so you never print the noise by mistake).");
+    p.note = "RELEASE " + juce::String (juce::roundToInt (rel * 100.0f)) + "%"
+           + (learned && playDb > -100.0 ? "  //  NOISE " + juce::String (floorDb, 0) + " dB" : juce::String ("  //  NOISE NOT LEARNED YET"));
+    return p;
+}
+
+//------------------------------------------------------------------------------
+// FLATLINER: rides the lead's level. It reports its own input level distribution (100 ms RMS, the
+// parts that are playing): the 10th / 50th / 90th percentiles and the floor between phrases.
+inline float leadSwingDb (const std::vector<float>& series)
+{
+    std::vector<float> act;
+    float mx = 0; for (auto v : series) mx = std::max (mx, v);
+    if (mx <= 0) return 0.0f;
+    for (auto v : series) if (v > mx * 1e-4f) act.push_back (10.0f * std::log10 (v));   // within 40 dB of the loudest: playing
+    if (act.size() < 30) return 0.0f;
+    std::sort (act.begin(), act.end());
+    return act[act.size() * 9 / 10] - act[act.size() / 10];
+}
+
+inline TrackPlan planFlatliner (const HelperInfo& h, const GenreProfile& g)
+{
+    auto p = makeHelperPlan (h, "Lead track");
+    const double secs = h.extra.getProperty ("seconds", 0.0);
+    if (secs < 5.0)
+    {
+        p.why.add ("Flatliner has only heard " + juce::String (secs, 1) + " s of this track. Play the song (RESET on The Master first), then PRESCRIBE again.");
+        p.note = "NOT ENOUGH HEARD YET";
+        return p;
+    }
+    const float p10 = (float) (double) h.extra.getProperty ("p10", -40.0);
+    const float p50 = (float) (double) h.extra.getProperty ("p50", -20.0);
+    const float p90 = (float) (double) h.extra.getProperty ("p90", -12.0);
+    const float floor = (float) (double) h.extra.getProperty ("floorDb", -80.0);
+    const float swing = p90 - p10;
+    const auto G = genreKey (g);
+
+    float factor = 0.6f, speed = 50.0f;
+    if (G == "pop")           { factor = 0.75f; speed = 60.0f; }
+    else if (G == "metal")    { factor = 0.65f; speed = 55.0f; }
+    else if (G == "hardrock") { factor = 0.60f; speed = 50.0f; }
+    else if (G == "rock")     { factor = 0.55f; speed = 45.0f; }
+    else if (G == "punk")     { factor = 0.50f; speed = 40.0f; }
+
+    const bool steady = swing < 6.0f;
+    const float range = steady ? 3.0f : juce::jlimit (3.0f, 12.0f, std::round (swing * factor));
+    const float target = juce::jlimit (-40.0f, 0.0f, std::round (p50 * 2.0f) / 2.0f);
+    float gate = std::max (floor + 6.0f, -80.0f);
+    gate = std::min (gate, p10 - 6.0f);
+    gate = juce::jlimit (-80.0f, -20.0f, std::round (gate));
+
+    p.params["ride"] = 1.0f;
+    p.params["target"] = target;
+    p.params["range"] = range;
+    p.params["speed"] = speed;
+    p.params["gate"] = gate;
+    p.params["output"] = 0.0f;
+
+    p.why.add ("RANGE " + juce::String (range, 0) + " dB: " + (steady
+               ? juce::String ("the lead is already steady (it swings only ") + juce::String (swing, 1) + " dB), so just a gentle ride."
+               : juce::String ("the lead swings ") + juce::String (swing, 1) + " dB between its quiet and loud parts; " + g.name
+                 + (G == "pop" ? " keeps the vocal very flat." : " keeps the lead steady, with some life left in it.")));
+    p.why.add ("TARGET " + juce::String (target, 1) + " dB: where the lead already sits on average, so the ride doesn't change its level. "
+               "The Servant's TRIM does the balance against the band.");
+    p.why.add ("SPEED " + juce::String (juce::roundToInt (speed)) + "%: " + (speed >= 55.0f ? "quick, to catch every word." : "natural, like a patient hand on the fader."));
+    p.why.add ("GATE " + juce::String (gate, 0) + " dB: the gaps between phrases sit around " + juce::String (floor, 0)
+               + " dB; below the gate the fader freezes, so breaths and room noise aren't pushed up.");
+    p.note = "RANGE " + juce::String (range, 0) + " dB  //  TARGET " + juce::String (target, 1) + " dB  //  SWING WAS " + juce::String (swing, 0) + " dB";
+    return p;
+}
+} // namespace mst

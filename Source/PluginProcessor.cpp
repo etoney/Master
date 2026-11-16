@@ -130,6 +130,7 @@ MasterProcessor::MasterProcessor()
 MasterProcessor::~MasterProcessor()
 {
     linkTimer.stopTimer();
+    finishTimer.stopTimer();
     for (auto& id : fixParamIds()) apvts.removeParameterListener (id, this);
 }
 
@@ -395,7 +396,7 @@ void MasterProcessor::setStateInformation (const void* data, int sizeInBytes)
             for (auto& c : chainPlan.changes)
                 chainLog.push_back ({ mst::plugDisplayName (c.plugin), c.label, c.why, chainStage >= 2 });
             for (auto& t : chainPlan.tracks)
-                chainLog.push_back ({ "The Servant", t.name + " (" + t.role + ")  " + t.summary(), t.why.joinIntoString ("\n"), chainStage >= 2 });
+                chainLog.push_back ({ mst::plugDisplayName (t.kind), t.name + " (" + t.role + ")  " + t.summary(), t.why.joinIntoString ("\n"), chainStage >= 2, t.id });
             state.removeProperty ("analysis", nullptr);
             state.removeProperty ("autoFix", nullptr);
             state.removeProperty ("chainPlan", nullptr);
@@ -473,20 +474,20 @@ std::vector<MasterProcessor::TrackStatus> MasterProcessor::trackStatus() const
     for (auto& t : chainPlan.tracks)
     {
         TrackStatus s;
-        s.peerId = t.id; s.name = t.name; s.role = t.role; s.share = t.share; s.summary = t.summary(); s.planned = true;
+        s.peerId = t.id; s.kind = t.kind; s.name = t.name; s.role = t.role; s.share = t.share; s.summary = t.summary(); s.planned = true;
         s.linked = peers.count (t.id) > 0;
-        if (s.linked) { const auto& ex = peers.at (t.id).extra; s.role = ex.getProperty ("role", s.role).toString(); }
+        if (s.linked && t.kind == "servant") { const auto& ex = peers.at (t.id).extra; s.role = ex.getProperty ("role", s.role).toString(); }
         seen.insert (t.id);
         out.push_back (s);
     }
     for (auto& [id, p] : peers)
     {
-        if (p.kind != "servant" || seen.count (id)) continue;
+        if (! isTrackKind (p.kind) || seen.count (id)) continue;
         TrackStatus s;
-        s.peerId = id; s.linked = true;
+        s.peerId = id; s.kind = p.kind; s.linked = true;
         s.name = p.extra.getProperty ("track", "").toString();
         if (s.name.isEmpty()) s.name = "(track name not given by the DAW)";
-        s.role = p.extra.getProperty ("role", "Other").toString();
+        s.role = p.kind == "servant" ? p.extra.getProperty ("role", "Other").toString() : mst::plugDisplayName (p.kind).toUpperCase();
         s.summary = chainStage >= 1 ? "joined after PRESCRIBE: press NEW PRESCRIPTION to include it" : "linked";
         out.push_back (s);
     }
@@ -512,7 +513,7 @@ std::vector<juce::String> MasterProcessor::detectChain() const
         juce::String best; float bestD = 0.6f;
         for (auto& [id, p] : peers)
         {
-            if (used.count (id) || ! p.env.isObject() || p.kind == "servant") continue;   // Servants sit on tracks, not on the bus
+            if (used.count (id) || ! p.env.isObject() || isTrackKind (p.kind)) continue;   // Servants, BuzzKill, Flatliner sit on tracks, not on the bus
             int shared = 0;
             const float d = cdlink::envDistance (p.env, "out", cur, curKey, shared);
             if (shared >= 12 && d < bestD) { bestD = d; best = id; }
@@ -614,9 +615,30 @@ juce::String MasterProcessor::prescribe()
     }
     for (auto s : common) mixSeries.push_back (myHist.at (s));
     for (auto& t : tracks) for (auto s : common) t.series.push_back (peerHist.at (t.id).at (s));
+    // BuzzKill and Flatliner on the tracks: which track each one is on (its Servant), what it heard
+    std::vector<mst::HelperInfo> helpers;
+    std::set<juce::String> ridden;
+    for (auto& [id, p] : peers)
+    {
+        if (p.kind != "buzzkill" && p.kind != "flatliner") continue;
+        mst::HelperInfo h;
+        h.id = id; h.kind = p.kind; h.extra = p.extra;
+        h.track = p.extra.getProperty ("track", "").toString();
+        const auto sv = servantOnSameTrack (p);
+        if (sv.isNotEmpty())
+        {
+            const auto& sp = peers.at (sv);
+            h.role = sp.extra.getProperty ("role", "Other").toString();
+            if (h.track.isEmpty()) h.track = sp.extra.getProperty ("track", "").toString();
+            if (p.kind == "flatliner") ridden.insert (sv);
+        }
+        else h.role = p.kind == "flatliner" ? "Lead" : "Rhythm";
+        helpers.push_back (h);
+    }
+
     if (! tracks.empty())
     {
-        auto tr = mst::planTracks (in, genres[(size_t) target.index], tracks, mixSeries);
+        auto tr = mst::planTracks (in, genres[(size_t) target.index], tracks, mixSeries, ridden);
         chainPlan.tracks = tr.tracks;
         chainPlan.tracksNote = tr.note;
         // The Master's own EQ only does what the tracks couldn't
@@ -629,6 +651,36 @@ juce::String MasterProcessor::prescribe()
         if (any) chainPlan.changes.push_back ({ "master", "eq", "TONE MATCH EQ", 1.0f, 1.0f, "ON",
                                                 "Only what the tracks couldn't fix within 6 dB each.", false });
         if (tr.note.isNotEmpty()) chainPlan.onTracks.add (tr.note);
+    }
+
+    const auto& G = genres[(size_t) target.index];
+    bool anyBuzz = false, anyFlat = false;
+    for (auto& h : helpers)
+    {
+        if (h.kind == "buzzkill") { chainPlan.tracks.push_back (mst::planBuzzKill (h, in, G)); anyBuzz = true; }
+        else                      { chainPlan.tracks.push_back (mst::planFlatliner (h, G)); anyFlat = true; }
+    }
+    // the advice for the tracks: what's linked now does the job; ask for what's missing
+    for (int i = chainPlan.onTracks.size(); --i >= 0;)
+    {
+        if (anyBuzz && chainPlan.onTracks[i].startsWith ("BUZZKILL")) chainPlan.onTracks.remove (i);
+        else if (anyFlat && chainPlan.onTracks[i].startsWith ("FLATLINER")) chainPlan.onTracks.remove (i);
+    }
+    if (! anyFlat)
+    {
+        // a lead that jumps around: from its Servant's fingerprint
+        for (size_t i = 0; i < tracks.size(); ++i)
+        {
+            if (! mst::roleIs (tracks[i].role, { "Lead" })) continue;
+            const float swing = mst::leadSwingDb (tracks[i].series);
+            if (swing > 10.0f)
+            {
+                for (int k = chainPlan.onTracks.size(); --k >= 0;) if (chainPlan.onTracks[k].startsWith ("FLATLINER")) chainPlan.onTracks.remove (k);
+                chainPlan.onTracks.insert (0, "FLATLINER on " + (tracks[i].name.isNotEmpty() ? tracks[i].name : juce::String ("the lead"))
+                                              + ": its level swings " + juce::String (swing, 0) + " dB. Put it first on that track, then PRESCRIBE again.");
+                break;
+            }
+        }
     }
     chainStage = 1;
     chainLog.clear();
@@ -659,11 +711,11 @@ juce::String MasterProcessor::applyChain()
                 if (c.hasFrom) c.from = (float) (double) peer.params.getProperty (c.param, 0.0);
             }
     }
-    // The Servants
+    // The Servants, BuzzKills and Flatliners on the tracks
     int tracksSet = 0;
     for (auto& t : chainPlan.tracks)
     {
-        if (peers.count (t.id) == 0) continue;
+        if (peers.count (t.id) == 0 || t.params.empty()) continue;
         sendSet (t.id, t.params, "The Master: " + chainPlan.genreName + " mix balance");
         ++tracksSet;
     }
@@ -693,7 +745,7 @@ juce::String MasterProcessor::applyChain()
     for (auto& t : chainPlan.tracks)
     {
         const bool there = peers.count (t.id) > 0;
-        chainLog.push_back ({ "The Servant", t.name + " (" + t.role + ")  " + (there ? t.summary() : juce::String ("NOT LINKED, SKIPPED")),
+        chainLog.push_back ({ mst::plugDisplayName (t.kind), t.name + " (" + t.role + ")  " + (there ? t.summary() : juce::String ("NOT LINKED, SKIPPED")),
                               t.why.joinIntoString ("\n"), false, t.id });
     }
     chainStage = 2;
@@ -745,4 +797,58 @@ juce::String MasterProcessor::refineChain()
     resetAnalysis();
     ++linkVersion;
     return {};
+}
+
+//==============================================================================
+juce::String MasterProcessor::servantOnSameTrack (const Peer& h) const
+{
+    const auto track = h.extra.getProperty ("track", "").toString();
+    if (track.isNotEmpty())
+        for (auto& [id, p] : peers)
+            if (p.kind == "servant" && p.extra.getProperty ("track", "").toString().equalsIgnoreCase (track)) return id;
+    // no names from the DAW: the Servant whose level fingerprint matches (before or after it on the track)
+    juce::String best; float bestD = 0.6f;
+    for (auto& [id, p] : peers)
+    {
+        if (p.kind != "servant" || ! p.env.isObject() || ! h.env.isObject()) continue;
+        for (auto [a, ak, b, bk] : { std::tuple<const juce::var*, const char*, const juce::var*, const char*> { &h.env, "out", &p.env, "in" },
+                                     { &p.env, "out", &h.env, "in" } })
+        {
+            int shared = 0;
+            const float d = cdlink::envDistance (*a, ak, *b, bk, shared);
+            if (shared >= 12 && d < bestD) { bestD = d; best = id; }
+        }
+    }
+    return best;
+}
+
+void MasterProcessor::requestPrescribe (std::function<void (const juce::String&)> done)
+{
+    finishWaiting.clear();
+    for (auto& [id, p] : peers)
+        if (p.kind == "servant" && (bool) p.extra.getProperty ("listening", false)) finishWaiting.insert (id);
+    if (finishWaiting.empty() || ! link) { const auto err = prescribe(); if (done) done (err); return; }
+
+    ++finishSeq;
+    auto m = cdlink::Endpoint::makeMessage ("analyze-finish");   // each Servant decides its resonances + clean-up now
+    m->setProperty ("seq", finishSeq);
+    link->send (m);
+    finishSentMs = juce::Time::getMillisecondCounter();
+    pendingPrescribe = std::move (done);
+    finishTimer.fn = [this]
+    {
+        for (auto it = finishWaiting.begin(); it != finishWaiting.end();)
+        {
+            auto p = peers.find (*it);
+            if (p == peers.end() || (int) p->second.extra.getProperty ("finished", 0) >= finishSeq) it = finishWaiting.erase (it);
+            else ++it;
+        }
+        if (! finishWaiting.empty() && juce::Time::getMillisecondCounter() - finishSentMs < 2500) return;
+        finishTimer.stopTimer();
+        auto cb = std::move (pendingPrescribe);
+        pendingPrescribe = nullptr;
+        const auto err = prescribe();
+        if (cb) cb (err);
+    };
+    finishTimer.startTimer (50);
 }
