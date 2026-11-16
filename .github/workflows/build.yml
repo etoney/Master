@@ -34,7 +34,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15, windows-latest]   # macos-15: steadier capacity than macos-latest (macOS 26); still builds universal arm64 + x86_64
+        os: [macos-15-intel, windows-latest]   # Apple Silicon runner queues kept timing out; the Intel runner still builds universal arm64 + x86_64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:
