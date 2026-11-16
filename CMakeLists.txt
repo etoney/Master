@@ -1,10 +1,12 @@
 cmake_minimum_required(VERSION 3.22)
+
+# Must come BEFORE project(), or CMake ignores them: universal (Apple Silicon + Intel), macOS 11+
+set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "")
+set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "")
 project(THEMASTER VERSION 1.3.0)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "")
-set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "")
 
 # Same JUCE version as Dominatrix, Chop Shop, DREAD, Possessed and BuzzKill.
 # (Pass -DJUCE_LOCAL_DIR=/path/to/JUCE to build against a local checkout.)
