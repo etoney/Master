@@ -31,6 +31,7 @@ public:
     void mouseExit (const juce::MouseEvent&) override { hover = -1; repaint(); }
     int getIndex() const { return index; }
     void setIndex (int i) { if (i != index) { index = i; repaint(); } }
+    void setLabels (const juce::StringArray& l) { if (l != labels) { labels = l; repaint(); } }
     std::function<void (int)> onChange;
 private:
     int segmentAt (juce::Point<int>) const;
@@ -50,6 +51,15 @@ public:
     juce::StringArray onTracks;
     bool hasPlan = false, orderKnown = false;
     int stage = 0;
+};
+
+// MY PLUGINS: the five steps (LISTEN, PRESCRIBE, PLACE, APPLY, REFINE) and where you are
+class StepList : public juce::Component
+{
+public:
+    void paint (juce::Graphics&) override;
+    int current = 0;                 // 0..4
+    juce::StringArray details;       // one line per step
 };
 
 // MY PLUGINS: what The Master changed in which plugin, and why (lives in a Viewport)
@@ -73,7 +83,7 @@ public:
     juce::String setFrom;
     juce::StringArray cantFix;
     float limGr = 0, tameGr = 0, levDb = 0;
-    bool fixOn = false;
+    bool fixOn = false, pluginMode = false;   // MY PLUGINS: only The Master's safety limiter runs here
 };
 
 // Segmented row of rusty buttons: AUTO + one per genre profile
@@ -257,12 +267,15 @@ private:
     std::vector<std::unique_ptr<FixSection>> sections;
     FixInfo fixInfo;
     std::vector<juce::Component*> analyzeComps, fixComps, chainComps;
-    Selector modeSel { nullptr, { "BUILT-IN FIXES", "MY PLUGINS" }, 14.0f };
+    juce::TextButton builtInButton { "OR USE BUILT-IN FIXES" }, nextButton { "NEXT: PRESCRIBE  >" };
+    void showMyProfilesMenu();
+    void promptNewSongProfile();
+    std::unique_ptr<juce::AlertWindow> nameDialog;
+    StepList stepList;
     ChainView chainView;
     juce::Viewport logViewport;
     ChangeLog changeLog;
     juce::TextButton newRxButton { "NEW PRESCRIPTION" };
-    juce::Label hintLabel;
     int lastLinkVersion = -1, lastChainSig = -1;
     int lastPlanSig = 0;
     std::unique_ptr<juce::FileChooser> chooser;

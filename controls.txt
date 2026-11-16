@@ -10,9 +10,16 @@ tells you which one and how to set it.
 
 It has two pages:
   ANALYZE   the report. Your audio passes through untouched.
-  FIX IT    press AUTO FIX and The Master corrects what it found: tone, peaks,
-            level swings, stereo, hum and loudness. Every correction is a
-            normal control you can override.
+            NEXT: PRESCRIBE takes you to the fix.
+  FIX IT WITH MY PLUGINS
+            The Master prescribes your Castle Danger plugins (which ones, in
+            what order, on the bus and on your tracks), then sets every knob
+            for you and tells you why. Five steps, shown on the left:
+            LISTEN, PRESCRIBE, PLACE THE PLUGINS, APPLY, REFINE.
+  OR USE BUILT-IN FIXES (top right of FIX IT)
+            No Castle Danger plugins? The Master fixes the mix itself with
+            its own tone EQ, dynamics, stereo, hum and loudness tools (AUTO
+            FIX). BACK TO MY PLUGINS returns.
 
 
 -------------------------------------------------------------------------------
@@ -105,10 +112,11 @@ THE VERDICT
 
 
 -------------------------------------------------------------------------------
-FIX IT  (automatic corrections, with override)
+BUILT-IN FIXES  (The Master corrects the mix itself, with override)
 -------------------------------------------------------------------------------
+  On FIX IT, press OR USE BUILT-IN FIXES.
   1. Play the whole song (ANALYZE page) so The Master has heard it.
-  2. Go to FIX IT and press AUTO FIX. Every section below gets set for you,
+  2. Press AUTO FIX. Every section below gets set for you,
      aiming at the genre. The report switches to AFTER FIXES.
   3. Play the song again. THE CURE shows YOUR MIX score > AFTER FIXES score.
   4. Press AUTO FIX once more after that play-through: it measures what came
@@ -155,10 +163,10 @@ FIX IT  (automatic corrections, with override)
 
 
 -------------------------------------------------------------------------------
-MY PLUGINS  (The Master sets your Castle Danger plugins for you)
+FIX IT WITH MY PLUGINS  (the main way: The Master sets your plugins for you)
 -------------------------------------------------------------------------------
-  On the FIX IT page, switch BUILT-IN FIXES to MY PLUGINS. Instead of fixing
-  the mix itself, The Master tells you which Castle Danger plugins to put on
+  This is what FIX IT opens on. Instead of fixing the mix itself, The
+  Master tells you which Castle Danger plugins to put on
   the master bus, then sets their controls for you over Castle Danger Link
   (automatic, offline, on your computer only).
 
@@ -225,6 +233,31 @@ MY PLUGINS  (The Master sets your Castle Danger plugins for you)
   If they're not there, the prescription asks for them when the mix needs
   them: BuzzKill when there's hum, Flatliner when the lead swings more than
   about 10 dB.
+
+
+-------------------------------------------------------------------------------
+MY PROFILES  (your own, from songs you pick)
+-------------------------------------------------------------------------------
+  Aim at a sound of your own instead of a genre: a band, an album, your own
+  best mix. REFERENCE GENRE > MY PROFILES > New profile from songs...
+  (also in the PROFILES menu). Name it, and The Master makes a folder with
+  that name and opens it. Drop in finished, mixed songs (WAV, AIFF, FLAC,
+  MP3, OGG; M4A too on a Mac). One song is enough; three or more is better.
+  The Master measures each song once, in the background, with the same
+  analyser it uses on your mix, and keeps only the numbers (a hidden cache
+  file in the folder). Add or remove songs any time; the profile follows.
+  With one or two songs, how far your mix may stray is borrowed from the
+  closest genre; with three or more it comes from how much your songs vary.
+
+  Where the folders are:
+    macOS:   ~/Library/Application Support/Castle Danger/The Master/
+             Profiles/My Profiles/<name>/
+    Windows: %APPDATA%\Castle Danger\The Master\Profiles\My Profiles\<name>\
+
+  Pick one from MY PROFILES. It works everywhere a genre does: the report,
+  the prescription for your plugins, the built-in fixes. AUTO also
+  considers your profiles. The profile is saved inside your project, so it
+  opens right on another computer too.
 
 
 -------------------------------------------------------------------------------

@@ -389,6 +389,35 @@ void Selector::paint (juce::Graphics& g)
 
 
 //==============================================================================
+void StepList::paint (juce::Graphics& g)
+{
+    static const char* titles[] = { "LISTEN", "PRESCRIBE", "PLACE THE PLUGINS", "APPLY", "REFINE" };
+    const float rh = (float) getHeight() / 5.0f;
+    for (int i = 0; i < 5; ++i)
+    {
+        auto row = juce::Rectangle<float> (0, rh * (float) i, (float) getWidth(), rh).reduced (4.0f, 2.0f);
+        const bool done = i < current, now = i == current;
+        if (now)
+        {
+            g.setColour (pal::signal.withAlpha (0.22f)); g.fillRoundedRectangle (row, 3.0f);
+            g.setColour (pal::signalHot.withAlpha (0.8f)); g.drawRoundedRectangle (row, 3.0f, 1.2f);
+        }
+        auto badge = row.removeFromLeft (rh - 10.0f).reduced (3.0f).withSizeKeepingCentre (22.0f, 22.0f);
+        g.setColour (done ? juce::Colour (0xff9aa86a) : (now ? pal::signalHot : pal::rustDeep)); g.fillEllipse (badge);
+        g.setColour (done ? juce::Colour (0xff1a1410) : pal::paint);
+        g.setFont (tex::stencil (13.0f));
+        g.drawText (done ? juce::String ("OK") : juce::String (i + 1), badge.toNearestInt(), juce::Justification::centred);
+        row.removeFromLeft (6.0f);
+        auto top = row.removeFromTop (row.getHeight() * 0.5f);
+        g.setColour (now ? juce::Colour (0xfffff0d8) : (done ? pal::paint.withAlpha (0.75f) : pal::paintDim));
+        g.setFont (tex::stencil (13.5f).withExtraKerningFactor (0.06f));
+        g.drawText (titles[i], top.toNearestInt(), juce::Justification::bottomLeft);
+        g.setColour (now ? pal::paint : pal::paintDim.withAlpha (0.8f));
+        g.setFont (bodyFont (10.5f));
+        g.drawFittedText (details[i], row.toNearestInt(), juce::Justification::topLeft, 1, 0.75f);
+    }
+}
+
 void ChainView::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat();
@@ -576,9 +605,14 @@ void FixInfo::paint (juce::Graphics& g)
         g.setColour (fixOn ? pal::signal : pal::paintDim.withAlpha (0.4f)); g.fillRect (bar.withWidth (bar.getWidth() * juce::jlimit (0.0f, 1.0f, v)));
         g.setColour (pal::paint); g.drawText (txt, row.toNearestInt(), juce::Justification::centredRight);
     };
-    meter ("LIMITER", limGr / 8.0f, "-" + juce::String (limGr, 1) + " dB");
-    meter ("PEAK TAMER", tameGr / 6.0f, "-" + juce::String (tameGr, 1) + " dB");
-    meter ("LEVELER", std::abs (levDb) / 6.0f, (levDb >= 0 ? "+" : "") + juce::String (levDb, 1) + " dB");
+    if (pluginMode)
+        meter ("SAFETY LIM", limGr / 8.0f, "-" + juce::String (limGr, 1) + " dB");
+    else
+    {
+        meter ("LIMITER", limGr / 8.0f, "-" + juce::String (limGr, 1) + " dB");
+        meter ("PEAK TAMER", tameGr / 6.0f, "-" + juce::String (tameGr, 1) + " dB");
+        meter ("LEVELER", std::abs (levDb) / 6.0f, (levDb >= 0 ? "+" : "") + juce::String (levDb, 1) + " dB");
+    }
 
     if (! cantFix.isEmpty())
     {
@@ -1005,12 +1039,16 @@ MasterEditor::MasterEditor (MasterProcessor& p) : AudioProcessorEditor (&p), pro
     for (auto* b : { &resetButton, &profilesButton }) addAndMakeVisible (*b);
 
     genreBar.setTooltip ("Which genre to compare your mix with. AUTO picks the closest match for you; the yellow lamp shows what your mix sounds like.");
-    genreBar.onPick = [this] (const juce::String& id) { proc.setGenreChoice (id); genreBar.setSelected (id); lastSnap = -1; };
+    genreBar.onPick = [this] (const juce::String& id)
+    {
+        if (id == "__mine" || proc.getLibrary().isCustom (id)) { showMyProfilesMenu(); return; }
+        proc.setGenreChoice (id); refreshGenres(); lastSnap = -1;
+    };
     addAndMakeVisible (genreBar);
     addAndMakeVisible (soundsLike);
     soundsLike.setInterceptsMouseClicks (false, false);
 
-    pageTabs.setTooltip ("ANALYZE: the report.  FIX IT: let The Master correct what it found, and override anything you like.");
+    pageTabs.setTooltip ("ANALYZE: the report.  FIX IT: The Master prescribes your Castle Danger plugins and sets them (or, if you choose, fixes the mix itself).");
     pageTabs.onChange = [this] (int i) { setPage (i); };
     addAndMakeVisible (pageTabs);
     reportSel.setTooltip ("Report on your mix as it comes in, or on what comes out after the fixes.");
@@ -1081,11 +1119,19 @@ MasterEditor::MasterEditor (MasterProcessor& p) : AudioProcessorEditor (&p), pro
     for (auto& k : knobs) { fixComps.push_back (&k->slider); fixComps.push_back (&k->label); }
     for (auto& sct : sections) { fixComps.push_back (&sct->on); fixComps.push_back (&sct->autoBtn); fixComps.push_back (&sct->why); }
 
-    // ---- MY PLUGINS
-    modeSel.setTooltip ("BUILT-IN FIXES: The Master corrects the mix itself.  MY PLUGINS: The Master prescribes Castle Danger plugins for the master bus and sets them for you.");
-    modeSel.setIndex (p.isPluginMode() ? 1 : 0);
-    modeSel.onChange = [this] (int i) { proc.setPluginMode (i == 1); lastSnap = -1; lastChainSig = -1; updateVisibility(); buildBackdrop(); repaint(); };
-    addChildComponent (modeSel);
+    // ---- MY PLUGINS first; The Master's own built-in fixes are the alternative
+    builtInButton.setTooltip ("No Castle Danger plugins on the bus? The Master can fix the mix itself with its own built-in EQ, dynamics, stereo, hum and loudness tools.");
+    builtInButton.onClick = [this]
+    {
+        proc.setPluginMode (! proc.isPluginMode());
+        lastSnap = -1; lastChainSig = -1; updateVisibility(); buildBackdrop(); repaint();
+    };
+    addChildComponent (builtInButton);
+    nextButton.setName ("autofix");   // the hot, glowing style: the way forward
+    nextButton.setTooltip ("Go to the fix: The Master prescribes your Castle Danger plugins and sets them for you.");
+    nextButton.onClick = [this] { if (! proc.isPluginMode()) proc.setPluginMode (true); setPage (1); refreshNow(); };
+    addChildComponent (nextButton);
+    stepList.setInterceptsMouseClicks (false, false);
     newRxButton.setTooltip ("Start over: make a new prescription from the analysis (take the plugins off the bus, or bypass them, and play the song first).");
     newRxButton.onClick = [this]
     {
@@ -1097,15 +1143,11 @@ MasterEditor::MasterEditor (MasterProcessor& p) : AudioProcessorEditor (&p), pro
             safe->lastChainSig = -1;
         });
     };
-    hintLabel.setFont (bodyFont (12.0f));
-    hintLabel.setColour (juce::Label::textColourId, pal::paint);
-    hintLabel.setJustificationType (juce::Justification::topLeft);
-    hintLabel.setInterceptsMouseClicks (false, false);
     chainView.setInterceptsMouseClicks (false, false);
     logViewport.setViewedComponent (&changeLog, false);
     logViewport.setScrollBarsShown (true, false);
     logViewport.setScrollBarThickness (10);
-    chainComps = { &chainView, &logViewport, &newRxButton, &hintLabel };
+    chainComps = { &chainView, &logViewport, &newRxButton, &stepList };
     for (auto* c : chainComps) addChildComponent (*c);
 
     refreshGenres();
@@ -1181,7 +1223,11 @@ void MasterEditor::updateVisibility()
     for (auto* c : fixComps) c->setVisible (page == 1 && ! chainMode);
     for (auto* c : chainComps) c->setVisible (page == 1 && chainMode);
     reportSel.setVisible (page == 0);
-    modeSel.setVisible (page == 1);
+    nextButton.setVisible (page == 0);
+    fixInfo.pluginMode = chainMode;
+    builtInButton.setVisible (page == 1);
+    builtInButton.setButtonText (chainMode ? "OR USE BUILT-IN FIXES" : "<  BACK TO MY PLUGINS");
+    pageTabs.setLabels ({ "ANALYZE", chainMode ? "FIX IT WITH MY PLUGINS" : "FIX IT: BUILT-IN FIXES" });
     autoFixButton.setVisible (page == 1);
     fixInfo.setVisible (page == 1);
     newRxButton.setVisible (page == 1 && chainMode && proc.getChainStage() >= 1);
@@ -1237,14 +1283,15 @@ void MasterEditor::resized()
     genreBar.setBounds (26, 162, 692, 54);
     soundsLike.setBounds (750, 162, 322, 54);
     tabsArea = { 16, 232, 1068, 42 };
-    pageTabs.setBounds (24, 237, 360, 32);
+    pageTabs.setBounds (24, 237, 460, 32);
     reportSel.setBounds (814, 239, 262, 28);
-    modeSel.setBounds (744, 239, 332, 28);
+    nextButton.setBounds (494, 237, 206, 32);
+    builtInButton.setBounds (856, 239, 220, 28);
     chainView.setBounds (300, 308, 772, 198);
     logViewport.setBounds (300, 552, 772, 170);
     changeLog.setEntries (proc.getLog(), logViewport.getWidth() - 12, {});
-    newRxButton.setBounds (28, 382, 238, 30);
-    hintLabel.setBounds (34, 420, 226, 140);
+    stepList.setBounds (28, 386, 238, 172);
+    newRxButton.setBounds (936, 284, 140, 20);
 
     // ANALYZE
     chart.setBounds (28, 306, 616, 228);
@@ -1315,15 +1362,31 @@ void MasterEditor::layoutFixPage()
 //==============================================================================
 void MasterEditor::refreshGenres()
 {
+    proc.refreshSongProfiles();
+    const auto& lib = proc.getLibrary();
     juce::StringArray ids { "auto" }, names { "AUTO|DETECTS IT" };
-    for (auto& g : proc.getLibrary().genres())
+    for (int i = 0; i < lib.numBuiltIn(); ++i)
     {
+        const auto& g = lib.genres()[(size_t) i];
         ids.add (g.id);
         names.add (g.name.toUpperCase() + "|" + (g.tracks > 0 ? juce::String (g.tracks) + " REFERENCE SONGS" : juce::String ("FACTORY")));
     }
-    genreBar.setGenres (ids, names);
     auto choice = proc.getGenreChoice();
-    if (choice != "auto" && proc.getLibrary().indexOf (choice) < 0) choice = "auto";
+    if (choice != "auto" && lib.indexOf (choice) < 0) choice = "auto";
+    // the last button: your own profiles (a folder of songs each)
+    const int nMine = (int) lib.genres().size() - lib.numBuiltIn();
+    if (lib.isCustom (choice))
+    {
+        const auto& g = lib.genres()[(size_t) lib.indexOf (choice)];
+        ids.add (choice);
+        names.add (g.name.toUpperCase() + "|MY PROFILE  //  " + juce::String (g.tracks) + (g.tracks == 1 ? " SONG" : " SONGS"));
+    }
+    else
+    {
+        ids.add ("__mine");
+        names.add ("MY PROFILES|" + (nMine > 0 ? juce::String (nMine) + (nMine == 1 ? " PROFILE" : " PROFILES") : juce::String ("FROM YOUR SONGS")));
+    }
+    genreBar.setGenres (ids, names);
     genreBar.setSelected (choice);
     lastLib = proc.getLibrary().version.load();
 }
@@ -1389,7 +1452,10 @@ void MasterEditor::updateReport()
         soundsLike.p1 = target.guesses[0].probability;
         soundsLike.second = target.guesses.size() > 1 ? genres[(size_t) target.guesses[1].index].name : juce::String();
         soundsLike.p2 = target.guesses.size() > 1 ? target.guesses[1].probability : 0.0f;
-        genreBar.setDetected (genres[(size_t) target.guesses[0].index].id);
+    {
+        const auto det = genres[(size_t) target.guesses[0].index].id;
+        genreBar.setDetected (proc.getLibrary().isCustom (det) && det != proc.getGenreChoice() ? juce::String ("__mine") : det);
+    }
     }
     else genreBar.setDetected ({});
     soundsLike.repaint();
@@ -1471,16 +1537,26 @@ void MasterEditor::timerCallback()
                 changeLog.setEntries (proc.getLog(), logViewport.getWidth() - 12,
                                       "Nothing changed yet. Every setting The Master sends to your plugins is listed here, with the reason.");
             }
-            juce::String hint;
             const int stage = proc.getChainStage();
-            bool allLinked = true;
-            juce::StringArray names;
-            for (auto& st : chainView.steps) { names.add (st.name.toUpperCase()); if (! st.linked) allLinked = false; }
-            if (stage == 0) hint = "1. Play the whole song with only The Master on the master bus.\n2. Press PRESCRIBE.";
-            else if (stage == 1 && ! allLinked) hint = "Put " + names.joinIntoString (", then ") + " on the master bus, in that order, BEFORE The Master. They link by themselves.";
-            else if (stage == 1) hint = "All linked. Play a few seconds to confirm the order, then press APPLY. Nothing changes until you do.";
-            else hint = "Applied. Play the song through, then press REFINE to fine-tune from what actually came out. Override anything on the plugins themselves.";
-            hintLabel.setText (hint, juce::dontSendNotification);
+            bool allLinked = ! chainView.steps.empty(), inOrder = true;
+            int linked = 0;
+            for (auto& st : chainView.steps) { if (st.linked) ++linked; else allLinked = false; if (! st.orderOk) inOrder = false; }
+            bool fromSaved = false;
+            const auto heard = proc.getDisplayFeatures (fromSaved);
+            const auto t = mmss (heard.seconds);
+            juce::StringArray d;
+            d.add (stage >= 1 ? "Heard " + mmss (cp.seconds) + " of your mix."
+                              : heard.seconds >= 20.0 ? t + " heard. Bypass any bus plugins first." : "RESET, then play the whole song (" + t + " so far).");
+            d.add (stage >= 1 ? juce::String ((int) cp.steps.size()) + " bus plugins, " + juce::String ((int) cp.tracks.size()) + " track plugins"
+                              : "The Master picks your plugins and settings.");
+            d.add (stage == 0 ? "Put them on the master bus, in order."
+                              : juce::String (linked) + " of " + juce::String ((int) chainView.steps.size()) + " linked"
+                                + (allLinked ? (chainView.orderKnown ? (inOrder ? ", in order" : ", ORDER WRONG") : ", play to check order") : juce::String()));
+            d.add (stage >= 2 ? "Done. Every change is in the log." : "Sets every knob, with the reason.");
+            d.add (stage >= 2 ? "Play it through, then REFINE." : "Fine-tune from what came out.");
+            stepList.details = d;
+            stepList.current = stage == 0 ? (heard.seconds >= 20.0 ? 1 : 0) : stage == 1 ? (allLinked ? 3 : 2) : 4;
+            stepList.repaint();
             updateVisibility();
         }
     }
@@ -1551,6 +1627,89 @@ void MasterEditor::copyReport()
     showMessage ("REPORT COPIED", "The full report is on your clipboard. Paste it into your notes, an email or a message.");
 }
 
+void MasterEditor::showMyProfilesMenu()
+{
+    proc.getSongFolders().scanNow();
+    proc.refreshSongProfiles();
+    refreshGenres();
+    const auto& lib = proc.getLibrary();
+    const auto folders = proc.getSongFolders().getFolders();
+    juce::PopupMenu m;
+    m.addSectionHeader ("MY PROFILES  //  FROM YOUR SONGS");
+    int i = 0;
+    for (auto& f : folders)
+    {
+        const bool ready = f.songs > 0 && lib.indexOf (f.id) >= 0;
+        juce::String label = f.name + "  (" + (f.songs > 0 ? juce::String (f.songs) + (f.songs == 1 ? " song" : " songs") : juce::String ("empty: add songs")) + ")";
+        if (f.failed > 0) label << "  " << f.failed << " couldn't be read";
+        m.addItem (200 + i, label, ready, proc.getGenreChoice() == f.id);
+        ++i;
+    }
+    for (int k = lib.numBuiltIn(); k < (int) lib.genres().size(); ++k)   // from a project, folder not on this computer
+    {
+        const auto& g = lib.genres()[(size_t) k];
+        bool listed = false; for (auto& f : folders) if (f.id == g.id) listed = true;
+        if (! listed) m.addItem (400 + k, g.name + "  (saved with this project)", true, proc.getGenreChoice() == g.id);
+    }
+    if (folders.empty()) m.addItem (99, "No profiles yet. Make one below: any songs you like.", false);
+    const auto meas = proc.getSongFolders().getMeasuring();
+    if (meas.isNotEmpty()) m.addItem (98, "Measuring " + meas + "...", false);
+    m.addSeparator();
+    m.addItem (1, "New profile from songs...");
+    m.addItem (2, "Open the My Profiles folder");
+    if (lib.isCustom (proc.getGenreChoice())) m.addItem (3, "Back to AUTO");
+
+    juce::Component::SafePointer<MasterEditor> safe (this);
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&genreBar).withParentComponent (this),
+        [safe, folders] (int r)
+        {
+            if (safe == nullptr || r == 0) return;
+            auto& self = *safe;
+            if (r == 1) self.promptNewSongProfile();
+            else if (r == 2) { mst::SongFolders::ensureRoot(); mst::SongFolders::root().startAsProcess(); }
+            else if (r == 3) self.proc.setGenreChoice ("auto");
+            else if (r >= 200 && r < 400 && r - 200 < (int) folders.size()) self.proc.setGenreChoice (folders[(size_t) (r - 200)].id);
+            else if (r >= 400) self.proc.setGenreChoice (self.proc.getLibrary().genres()[(size_t) (r - 400)].id);
+            self.refreshGenres();
+            self.lastSnap = -1;
+        });
+}
+
+void MasterEditor::promptNewSongProfile()
+{
+    nameDialog = std::make_unique<juce::AlertWindow> ("NEW PROFILE FROM SONGS",
+        "Name it anything (\"My Band\", \"90s Grunge\", \"Album Sound\"). The Master makes a folder with that name and opens it: "
+        "drop in finished songs that sound the way you want your mix to sound. One is enough; three or more is better.",
+        juce::MessageBoxIconType::NoIcon, this);
+    nameDialog->addTextEditor ("name", "", "Profile name");
+    nameDialog->addButton ("CREATE", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    nameDialog->addButton ("CANCEL", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    nameDialog->setColour (juce::AlertWindow::backgroundColourId, juce::Colour (0xff1a1411));
+    nameDialog->setColour (juce::AlertWindow::textColourId, pal::paint);
+    nameDialog->setColour (juce::AlertWindow::outlineColourId, pal::rust);
+    juce::Component::SafePointer<MasterEditor> safe (this);
+    nameDialog->enterModalState (true, juce::ModalCallbackFunction::create ([safe] (int result)
+    {
+        if (safe == nullptr) return;
+        auto& self = *safe;
+        if (result == 1 && self.nameDialog != nullptr)
+        {
+            juce::File dir;
+            if (self.proc.createSongProfile (self.nameDialog->getTextEditorContents ("name"), dir))
+            {
+                dir.startAsProcess();
+                self.showMessage ("ADD YOUR SONGS", "Drop songs into the \"" + dir.getFileName() + "\" folder that just opened (WAV, AIFF, FLAC, MP3, OGG"
+                                  #if JUCE_MAC
+                                  ", M4A"
+                                  #endif
+                                  "). The Master measures them in the background; then pick it under REFERENCE GENRE > MY PROFILES.");
+            }
+            else self.showMessage ("COULDN'T MAKE IT", "That name can't be used as a folder name. Try another.");
+        }
+        self.nameDialog.reset();
+    }), false);
+}
+
 void MasterEditor::showProfilesMenu()
 {
     auto& lib = proc.getLibrary();
@@ -1564,6 +1723,9 @@ void MasterEditor::showProfilesMenu()
     m.addItem (1, "Import profile pack...");
     m.addItem (2, "Open profiles folder");
     m.addItem (3, "Restore factory profiles", lib.usingUserPack());
+    m.addSeparator();
+    m.addItem (6, "New profile from my songs...");
+    m.addItem (7, "Open the My Profiles folder");
     juce::PopupMenu refs;
     if (admin)
     {
@@ -1619,6 +1781,8 @@ void MasterEditor::showProfilesMenu()
                     safe->showMessage (err.isEmpty() ? "PACK EXPORTED" : "EXPORT FAILED", err.isEmpty() ? "Saved " + fc.getResult().getFileName() + ". Upload it for your users, or put it in the repo as Profiles/factory.json for the next release." : err);
                 });
             }
+            else if (r == 6) self.promptNewSongProfile();
+            else if (r == 7) { mst::SongFolders::ensureRoot(); mst::SongFolders::root().startAsProcess(); }
             else if (r == 5)
             {
                 juce::SystemClipboard::copyTextToClipboard (juce::JSON::toString (fx.toVar(), false));
@@ -1806,7 +1970,7 @@ void MasterEditor::buildBackdrop()
     else if (proc.isPluginMode())
     {
         g.setColour (pal::screen); g.fillRoundedRectangle (logViewport.getBounds().toFloat(), 4.0f);
-        g.setColour (juce::Colours::black.withAlpha (0.55f)); g.fillRoundedRectangle (hintLabel.getBounds().toFloat().expanded (6.0f, 4.0f), 4.0f);
+        g.setColour (juce::Colours::black.withAlpha (0.55f)); g.fillRoundedRectangle (stepList.getBounds().toFloat().expanded (4.0f, 4.0f), 4.0f);
         auto hint = tex::distressedText ("YOUR PLUGINS.  MY SETTINGS.", 238, 14, tex::plainBold (9.5f), pal::paint.withAlpha (0.7f), juce::Justification::centred, scale, 0.15f, 89, 0.14f);
         g.setOpacity (1.0f); g.drawImage (hint, juce::Rectangle<float> (28.0f, 305.0f, 238.0f, 14.0f));
     }

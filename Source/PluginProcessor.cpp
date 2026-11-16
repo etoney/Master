@@ -120,6 +120,8 @@ MasterProcessor::MasterProcessor()
       apvts (*this, nullptr, "TheMaster", createLayout())
 {
     library.load (juce::String::fromUTF8 (BinaryData::factory_json, BinaryData::factory_jsonSize), mst::ProfileLibrary::getUserPackFile());
+    songs.setFactory ({ library.genres().begin(), library.genres().begin() + library.numBuiltIn() });
+    songs.start();
     for (auto& id : fixParamIds()) apvts.addParameterListener (id, this);
     link = std::make_unique<cdlink::Endpoint> ("master", [this] (const juce::var& m) { onLinkMessage (m); });
     linkTimer.fn = [this] { linkTick(); };
@@ -370,6 +372,10 @@ void MasterProcessor::getStateInformation (juce::MemoryBlock& destData)
     if (plan.valid) state.setProperty ("autoFix", juce::JSON::toString (plan.toVar(), true), nullptr);
     else state.removeProperty ("autoFix", nullptr);
     state.setProperty ("pluginMode", pluginMode, nullptr);
+    state.setProperty ("uiVersion", 2, nullptr);
+    if (library.isCustom (genreChoice) && library.indexOf (genreChoice) >= 0)   // your own profile travels with the project
+        state.setProperty ("customProfile", juce::JSON::toString (library.genres()[(size_t) library.indexOf (genreChoice)].toVar(), true), nullptr);
+    else state.removeProperty ("customProfile", nullptr);
     state.setProperty ("chainStage", chainStage, nullptr);
     if (chainPlan.valid) state.setProperty ("chainPlan", juce::JSON::toString (chainPlan.toVar(), true), nullptr);
     else state.removeProperty ("chainPlan", nullptr);
@@ -383,11 +389,18 @@ void MasterProcessor::setStateInformation (const void* data, int sizeInBytes)
         {
             auto state = juce::ValueTree::fromXml (*xml);
             genreChoice = state.getProperty ("genre", "auto").toString();
+            {
+                mst::GenreProfile g; juce::String err;
+                const auto cj = state.getProperty ("customProfile", "").toString();
+                if (cj.isNotEmpty() && mst::GenreProfile::fromVar (juce::JSON::parse (cj), g, err)) library.addSessionCustom (g);
+                state.removeProperty ("customProfile", nullptr);
+            }
             const auto a = state.getProperty ("analysis", "").toString();
             savedFeatures = a.isNotEmpty() ? mst::Features::fromVar (juce::JSON::parse (a)) : mst::Features {};
             const auto af = state.getProperty ("autoFix", "").toString();
             plan = af.isNotEmpty() ? mst::FixPlan::fromVar (juce::JSON::parse (af)) : mst::FixPlan {};
-            pluginMode = state.getProperty ("pluginMode", false);
+            // from 1.5 MY PLUGINS comes first; older projects keep BUILT-IN FIXES only if they really used AUTO FIX
+            pluginMode = (int) state.getProperty ("uiVersion", 1) >= 2 ? (bool) state.getProperty ("pluginMode", true) : ! plan.valid || (bool) state.getProperty ("pluginMode", false);
             chainStage = state.getProperty ("chainStage", 0);
             const auto cp = state.getProperty ("chainPlan", "").toString();
             chainPlan = cp.isNotEmpty() ? mst::ChainPlan::fromVar (juce::JSON::parse (cp)) : mst::ChainPlan {};
@@ -400,6 +413,7 @@ void MasterProcessor::setStateInformation (const void* data, int sizeInBytes)
             state.removeProperty ("analysis", nullptr);
             state.removeProperty ("autoFix", nullptr);
             state.removeProperty ("chainPlan", nullptr);
+            state.removeProperty ("uiVersion", nullptr);
             apvts.replaceState (state);
         }
 }
@@ -439,8 +453,25 @@ void MasterProcessor::onLinkMessage (const juce::var& m)
     }
 }
 
+void MasterProcessor::refreshSongProfiles()
+{
+    if (songs.version.load() == songsVersionSeen) return;
+    songsVersionSeen = songs.version.load();
+    library.setCustom (songs.getProfiles());
+}
+
+bool MasterProcessor::createSongProfile (const juce::String& rawName, juce::File& folderOut)
+{
+    const auto name = juce::File::createLegalFileName (rawName.trim());
+    if (name.isEmpty()) return false;
+    mst::SongFolders::ensureRoot();
+    folderOut = mst::SongFolders::root().getChildFile (name);
+    return folderOut.isDirectory() || folderOut.createDirectory().wasOk();
+}
+
 void MasterProcessor::linkTick()
 {
+    refreshSongProfiles();
     const auto now = juce::Time::getMillisecondCounter();
     for (auto it = peers.begin(); it != peers.end();)
         if (now - it->second.seen > 3000) { it = peers.erase (it); ++linkVersion; }

@@ -308,12 +308,27 @@ public:
         return writeUser (p);
     }
 
+    // your own profiles (folders of songs), and any the open project brought along
+    void setCustom (std::vector<GenreProfile> c) { custom = std::move (c); rebuild(); }
+    void addSessionCustom (const GenreProfile& g)
+    {
+        for (auto& s : sessionCustom) if (s.id == g.id) { s = g; rebuild(); return; }
+        sessionCustom.push_back (g); rebuild();
+    }
+    bool isCustom (const juce::String& id) const
+    {
+        for (auto& c : custom) if (c.id == id) return true;
+        for (auto& c : sessionCustom) if (c.id == id) return true;
+        return false;
+    }
+    int numBuiltIn() const { return builtInCount; }
+
     juce::String exportPack (const juce::File& dest, const juce::String& packVersion) const
     {
         ProfilePack p;
         p.packVersion = packVersion;
         p.notes = "Exported from The Master.";
-        p.genres = merged;
+        p.genres.assign (merged.begin(), merged.begin() + builtInCount);   // not your own song-folder profiles
         return dest.replaceWithText (p.toJson()) ? juce::String() : "couldn't write " + dest.getFullPathName();
     }
 
@@ -337,6 +352,13 @@ private:
                 for (auto& m : merged) if (m.id == g.id) { m = g; replaced = true; }
                 if (! replaced) merged.push_back (g);
             }
+        builtInCount = (int) merged.size();
+        for (auto& c : custom) merged.push_back (c);
+        for (auto& c : sessionCustom)                                // a project's profile whose folder isn't on this computer
+        {
+            bool have = false; for (auto& m : merged) if (m.id == c.id) have = true;
+            if (! have) merged.push_back (c);
+        }
         ++version;
     }
 
@@ -344,6 +366,7 @@ private:
     bool hasUser = false;
     juce::String userError;
     juce::File userPackFile;
-    std::vector<GenreProfile> merged;
+    std::vector<GenreProfile> merged, custom, sessionCustom;
+    int builtInCount = 0;
 };
 } // namespace mst

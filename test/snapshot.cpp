@@ -99,6 +99,10 @@ int main (int argc, char** argv)
     const juce::File dir (argc > 1 ? juce::File::getCurrentWorkingDirectory().getChildFile (argv[1]) : juce::File::getCurrentWorkingDirectory());
     dir.createDirectory();
     int failures = 0;
+    // your own song-folder profiles live in a scratch folder for the test
+    const auto myRoot = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("the-master-test-my-profiles");
+    myRoot.deleteRecursively();
+    mst::SongFolders::rootOverride() = myRoot;
     auto check = [&] (bool ok, const juce::String& what) { std::printf ("[%s] %s\n", ok ? "PASS" : "FAIL", what.toRawUTF8()); std::fflush (stdout); if (! ok) ++failures; };
 
     // ---------------- analyser
@@ -458,6 +462,72 @@ int main (int argc, char** argv)
         for (auto& tp : res.tracks) { int k = 0; for (auto v : tp.eq) if (std::abs (v) >= 0.5f) ++k; maxSix = maxSix && k <= 6; }
         check (maxSix, "no track gets more EQ moves than The Servant has bands (6)");
         check (res.tracks[0].params.at ("toneOn") == 1.0f && std::abs (res.tracks[0].params.at ("t1g") - res.tracks[0].eq[3]) < 0.01f, "the biggest move goes on The Servant's band 1");
+    }
+
+    // ---------------- MY PROFILES: a folder of songs becomes a profile
+    {
+        auto writeWav = [] (const juce::File& f, const Gen& g, double secs)
+        {
+            f.getParentDirectory().createDirectory(); f.deleteFile();
+            juce::WavAudioFormat wav;
+            std::unique_ptr<juce::OutputStream> os (f.createOutputStream().release());
+            auto w = wav.createWriterFor (os, juce::AudioFormatWriterOptions{}.withSampleRate (SR).withNumChannels (2).withBitsPerSample (24));
+            juce::AudioBuffer<float> b (2, (int) (secs * SR));
+            for (int i = 0; i < b.getNumSamples(); ++i) for (int c = 0; c < 2; ++c) b.setSample (c, i, g (i, c));
+            return w != nullptr && w->writeFromAudioSampleBuffer (b, 0, b.getNumSamples());
+        };
+        mst::SongFolders::ensureRoot();
+        check (myRoot.getChildFile ("READ ME.txt").existsAsFile(), "My Profiles folder is made, with a READ ME");
+        check (writeWav (myRoot.getChildFile ("My Band").getChildFile ("song one.wav"), drumMix (0.8f), 20.0), "wrote a test song");
+        myRoot.getChildFile ("Empty One").createDirectory();
+        mst::SongFolders sf;
+        sf.setFactory (factory.genres);
+        sf.scanNow();
+        auto profs = sf.getProfiles();
+        auto folders = sf.getFolders();
+        check (profs.size() == 1 && profs[0].id == "myMyBand" && profs[0].name == "My Band" && profs[0].tracks == 1 && profs[0].source == "songs",
+               "a folder with one song becomes a profile, named after the folder");
+        bool emptyListed = false; for (auto& f : folders) if (f.name == "Empty One" && f.songs == 0) emptyListed = true;
+        check (emptyListed && folders.size() == 2, "an empty folder is listed but makes no profile yet");
+        check (myRoot.getChildFile ("My Band").getChildFile (".castle-danger-cache.json").existsAsFile(), "the measurements are cached in the folder");
+        const auto songFx = analyse (drumMix (0.8f), 20.0);
+        check (std::abs (profs[0].stat (mst::fLufs).mean - songFx.lufs) < 0.3f, juce::String::formatted ("the profile is the song as The Master hears it (%.1f vs %.1f LUFS)", profs[0].stat (mst::fLufs).mean, songFx.lufs));
+        const auto near = mst::detectGenre (songFx, factory.genres);
+        check (profs[0].stat (mst::fBand0 + 3).sd >= factory.genres[(size_t) near.front().index].stat (mst::fBand0 + 3).sd - 1e-4f,
+               "with one song the allowed spread comes from the closest factory genre");
+
+        const auto t0 = juce::Time::getMillisecondCounterHiRes();
+        mst::SongFolders sf2; sf2.setFactory (factory.genres); sf2.scanNow();
+        check (sf2.getProfiles().size() == 1 && juce::Time::getMillisecondCounterHiRes() - t0 < 2000.0, "another copy reads the cache instead of measuring again");
+
+        writeWav (myRoot.getChildFile ("My Band").getChildFile ("song two.wav"), drumMix (0.4f), 20.0);
+        sf.scanNow();
+        check (sf.getProfiles().size() == 1 && sf.getProfiles()[0].tracks == 2, "dropping in another song refines the profile");
+        myRoot.getChildFile ("My Band").getChildFile ("song two.wav").deleteFile();
+        sf.scanNow();
+        check (sf.getProfiles()[0].tracks == 1, "removing a song takes it out again");
+
+        // in the plugin: listed after the genres, picked, saved with the project
+        MasterProcessor p;
+        p.getSongFolders().scanNow();
+        p.refreshSongProfiles();
+        const int mi = p.getLibrary().indexOf ("myMyBand");
+        check (mi >= p.getLibrary().numBuiltIn() && p.getLibrary().isCustom ("myMyBand"), "the plugin lists your profile after the genres");
+        p.setGenreChoice ("myMyBand");
+        const auto tgt = p.resolveTarget (songFx);
+        check (tgt.index == mi, "aiming at your profile");
+        juce::File made;
+        check (p.createSongProfile ("Album / Sound", made) && made.isDirectory() && ! made.getFileName().containsChar ('/'), "NEW makes a folder with a safe name");
+        juce::MemoryBlock mb; p.getStateInformation (mb);
+        myRoot.getChildFile ("My Band").deleteRecursively();
+        MasterProcessor q;
+        q.getSongFolders().scanNow(); q.refreshSongProfiles();
+        q.setStateInformation (mb.getData(), (int) mb.getSize());
+        check (q.getGenreChoice() == "myMyBand" && q.getLibrary().indexOf ("myMyBand") >= 0, "the project keeps its profile even if the folder is gone");
+        juce::File exported = myRoot.getChildFile ("export.json");
+        q.getLibrary().exportPack (exported, "t");
+        mst::ProfilePack ep; juce::String perr;
+        check (mst::ProfilePack::parse (exported.loadFileAsString(), ep, perr) && ep.find ("myMyBand") == nullptr, "exporting a pack leaves your own profiles out");
     }
 
     // ---------------- BuzzKill and Flatliner on the tracks
@@ -853,8 +923,13 @@ int main (int argc, char** argv)
         check (writePng (ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f), dir.getChildFile ("gui_metal.png")), "locked to Metal snapshot");
         q.setGenreChoice ("auto");
 
-        // FIX IT page, before and after AUTO FIX, then with an override
+        // FIX IT opens on MY PLUGINS; BUILT-IN FIXES is the alternative
         me->showPage (1);
+        check (q.isPluginMode(), "FIX IT opens on MY PLUGINS");
+        check (writePng (ed->createComponentSnapshot (ed->getLocalBounds(), true, 2.0f), dir.getChildFile ("gui_fix_plugins.png")), "FIX IT with my plugins (first)");
+        q.setPluginMode (false);
+        me->showPage (1);
+        // BUILT-IN FIXES, before and after AUTO FIX, then with an override
         check (writePng (ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f), dir.getChildFile ("gui_fix_empty.png")), "FIX IT page before AUTO FIX");
         me->pressAutoFix();
         juce::MessageManager::getInstance()->runDispatchLoopUntil (100);

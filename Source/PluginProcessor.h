@@ -4,6 +4,7 @@
 #include "Cure.h"
 #include "Chain.h"
 #include "CDLink.h"
+#include "SongProfiles.h"
 
 // Lock-free hand-off from the audio thread to a low-priority analysis thread, so the
 // master bus never waits on an FFT. Audio passes through untouched (zero latency).
@@ -137,6 +138,10 @@ public:
 
     // ---- genres
     mst::ProfileLibrary& getLibrary() { return library; }
+    // your own profiles: a folder of songs each (Profiles/My Profiles/<name>)
+    mst::SongFolders& getSongFolders() { return songs; }
+    void refreshSongProfiles();                       // pick up new / changed folders now (also done 4x a second)
+    bool createSongProfile (const juce::String& name, juce::File& folderOut);
     juce::String getGenreChoice() const { return genreChoice; }   // "auto" or a genre id
     void setGenreChoice (const juce::String& id) { genreChoice = id; }
 
@@ -159,7 +164,7 @@ private:
     std::set<juce::String> finishWaiting;
     LinkTimer finishTimer;
 
-    bool pluginMode = false;
+    bool pluginMode = true;   // MY PLUGINS first; BUILT-IN FIXES is the alternative
     int chainStage = 0;
     mst::ChainPlan chainPlan;
     std::vector<LogEntry> chainLog;
@@ -181,6 +186,8 @@ private:
     int maxBlock = 512;
     std::vector<float> monoR;
     mst::ProfileLibrary library;
+    mst::SongFolders songs;
+    int songsVersionSeen = -1;
     juce::String genreChoice { "auto" };
     mst::Features savedFeatures;   // restored from the project
 
