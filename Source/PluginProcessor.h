@@ -111,7 +111,9 @@ public:
         int position = -1;           // where it actually sits in The Master's chain (0 = first), -1 = not detected
         bool orderOk = false;        // detected and in the prescribed order
     };
-    struct LogEntry { juce::String plugin, title, detail; bool confirmed = false; };
+    struct LogEntry { juce::String plugin, title, detail; bool confirmed = false; juce::String peerId; };
+    struct TrackStatus { juce::String peerId, name, role, summary; float share = -1; bool linked = false, planned = false; };
+    std::vector<TrackStatus> trackStatus() const;   // linked Servants + what the prescription does to each
 
     bool isPluginMode() const { return pluginMode; }
     void setPluginMode (bool b) { pluginMode = b; }
@@ -151,6 +153,11 @@ private:
     mst::ChainPlan chainPlan;
     std::vector<LogEntry> chainLog;
     std::map<juce::String, Peer> peers;
+    // level fingerprints over the whole analysis (100 ms steps, linear power): The Master's input
+    // and every linked plugin's output, to work out each track's real gain into the mix
+    std::map<juce::int64, float> myHist;
+    std::map<juce::String, std::map<juce::int64, float>> peerHist;
+    static void mergeEnv (std::map<juce::int64, float>& hist, const juce::var& env, const char* key);
     cdlink::EnvTap env;
     std::unique_ptr<cdlink::Endpoint> link;
     LinkTimer linkTimer;

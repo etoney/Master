@@ -395,54 +395,93 @@ void ChainView::paint (juce::Graphics& g)
     g.setColour (pal::screen); g.fillRoundedRectangle (r, 4.0f);
     g.setColour (juce::Colour (0xff3a2418)); g.drawRoundedRectangle (r.reduced (0.5f), 4.0f, 1.0f);
     r = r.reduced (12, 8);
+    auto right = r.removeFromRight (r.getWidth() * 0.46f);
+    r.removeFromRight (14);
+    g.setColour (juce::Colour (0x30d6c7a6)); g.drawVerticalLine ((int) right.getX() - 7, right.getY(), right.getBottom());
+
+    // ---- right: the tracks (The Servant)
+    {
+        auto rr = right;
+        g.setColour (pal::rustLight); g.setFont (tex::stencil (13.0f).withExtraKerningFactor (0.08f));
+        g.drawText ("YOUR TRACKS  //  THE SERVANT", rr.removeFromTop (17).toNearestInt(), juce::Justification::centredLeft);
+        if (tracks.empty())
+        {
+            g.setColour (pal::paintDim); g.setFont (bodyFont (11.5f));
+            g.drawFittedText ("No Servants linked. Put The Servant on your tracks and set each one's ROLE: The Master then shares the tone, "
+                              "compression and level fixes out to the tracks that cause them.", rr.toNearestInt(), juce::Justification::topLeft, 6, 0.9f);
+        }
+        else
+        {
+            const int maxRows = (int) (rr.getHeight() / 29.0f);
+            for (int i = 0; i < (int) tracks.size() && i < maxRows; ++i)
+            {
+                const auto& t = tracks[(size_t) i];
+                auto row = rr.removeFromTop (29.0f);
+                if (i == maxRows - 1 && (int) tracks.size() > maxRows)
+                {
+                    g.setColour (pal::paintDim); g.setFont (bodyFont (11.0f));
+                    g.drawText ("+ " + juce::String ((int) tracks.size() - i) + " more tracks (see the log)", row.toNearestInt(), juce::Justification::centredLeft);
+                    break;
+                }
+                const auto col = ! t.linked ? pal::signalHot : (t.planned ? juce::Colour (0xff9aa86a) : pal::hazard);
+                g.setColour (col); g.fillEllipse (row.getX(), row.getY() + 5, 7, 7);
+                auto top = row.removeFromTop (15).withTrimmedLeft (12);
+                g.setColour (pal::paint); g.setFont (tex::stencil (12.5f).withExtraKerningFactor (0.05f));
+                const auto meta = t.role.toUpperCase() + (t.share >= 0 ? "  " + juce::String (juce::roundToInt (t.share * 100.0f)) + "%" : juce::String());
+                g.setColour (pal::paintDim); g.setFont (ledFont (10.0f));
+                g.drawText (meta, top.toNearestInt(), juce::Justification::centredRight);
+                g.setColour (pal::paint); g.setFont (tex::stencil (12.5f).withExtraKerningFactor (0.05f));
+                g.drawFittedText (t.name.toUpperCase(), top.withTrimmedRight (90).toNearestInt(), juce::Justification::centredLeft, 1, 0.7f);
+                g.setColour (t.linked ? pal::paint.withAlpha (0.75f) : pal::signalHot); g.setFont (bodyFont (10.5f));
+                g.drawFittedText (t.linked ? t.summary : "not linked any more", row.withTrimmedLeft (12).toNearestInt(), juce::Justification::topLeft, 1, 0.8f);
+            }
+        }
+    }
+
+    // ---- left: the master bus chain
     if (! hasPlan)
     {
-        g.setColour (pal::paintDim); g.setFont (bodyFont (13.0f));
+        g.setColour (pal::paintDim); g.setFont (bodyFont (12.5f));
         g.drawFittedText ("Play your whole song with nothing on the master bus except The Master (last), then press PRESCRIBE. "
-                          "The Master will tell you which Castle Danger plugins to add, and in what order.", r.toNearestInt(), juce::Justification::centredLeft, 4);
+                          "The Master will tell you which Castle Danger plugins to add, and in what order.", r.toNearestInt(), juce::Justification::centredLeft, 5);
         return;
     }
+    g.setColour (pal::rustLight); g.setFont (tex::stencil (13.0f).withExtraKerningFactor (0.08f));
+    g.drawText ("MASTER BUS", r.removeFromTop (17).toNearestInt(), juce::Justification::centredLeft);
     const int n = (int) steps.size() + 1;
-    auto list = r.removeFromTop (juce::jmin (r.getHeight() - (onTracks.isEmpty() ? 0.0f : 46.0f), 44.0f * (float) n));
+    auto list = r.removeFromTop (juce::jmin (r.getHeight() - (onTracks.isEmpty() ? 0.0f : 40.0f), 38.0f * (float) n));
     const float rh = list.getHeight() / (float) n;
     for (int i = 0; i < n; ++i)
     {
-        auto row = list.removeFromTop (rh).reduced (0, 3);
+        auto row = list.removeFromTop (rh).reduced (0, 2);
         const bool isMaster = i == n - 1;
         const auto* s = isMaster ? nullptr : &steps[(size_t) i];
-        // number badge
         auto badge = row.removeFromLeft (row.getHeight()).reduced (3);
         g.setColour (isMaster ? pal::rust : pal::rustDeep); g.fillEllipse (badge);
         g.setColour (pal::paint); g.setFont (tex::stencil (badge.getHeight() * 0.6f));
         g.drawText (juce::String (i + 1), badge.toNearestInt(), juce::Justification::centred);
-        row.removeFromLeft (10);
-        // status (right)
-        auto stat = row.removeFromRight (230);
+        row.removeFromLeft (8);
         juce::Colour col; juce::String txt;
         if (isMaster) { col = juce::Colour (0xff9aa86a); txt = "YOU ARE HERE (LAST)"; }
         else if (! s->linked) { col = pal::signalHot; txt = "NOT FOUND: ADD IT"; }
-        else if (s->position < 0) { col = pal::hazard; txt = orderKnown ? "LINKED, NOT IN THIS CHAIN?" : "LINKED  //  PLAY TO CHECK ORDER"; }
-        else if (! s->orderOk) { col = pal::signalHot; txt = "LINKED  //  WRONG SPOT"; }
-        else { col = juce::Colour (0xff9aa86a); txt = stage >= 2 ? "LINKED  //  SET" : "LINKED  //  IN ORDER"; }
-        auto lamp = juce::Rectangle<float> (9, 9).withCentre ({ stat.getX() + 6, stat.getCentreY() });
-        juce::Path lp; lp.addEllipse (lamp);
-        juce::DropShadow (col.withAlpha (0.8f), 8, {}).drawForPath (g, lp);
-        g.setColour (col); g.fillPath (lp);
-        g.setFont (ledFont (11.0f));
-        g.drawFittedText (txt, stat.withTrimmedLeft (16).toNearestInt(), juce::Justification::centredLeft, 1, 0.7f);
-        // name + role
-        g.setColour (pal::paint); g.setFont (tex::stencil (17.0f).withExtraKerningFactor (0.08f));
-        g.drawText (isMaster ? juce::String ("THE MASTER") : s->name.toUpperCase(), row.removeFromTop (row.getHeight() * 0.5f).toNearestInt(), juce::Justification::bottomLeft);
-        g.setColour (pal::paintDim); g.setFont (bodyFont (11.0f));
-        g.drawFittedText (isMaster ? juce::String ("Measures the result, and does the tone EQ + a safety limiter.") : s->role, row.toNearestInt(), juce::Justification::topLeft, 1, 0.8f);
+        else if (s->position < 0) { col = pal::hazard; txt = orderKnown ? "LINKED, NOT IN CHAIN?" : "LINKED: PLAY TO CHECK"; }
+        else if (! s->orderOk) { col = pal::signalHot; txt = "LINKED: WRONG SPOT"; }
+        else { col = juce::Colour (0xff9aa86a); txt = stage >= 2 ? "LINKED: SET" : "LINKED: IN ORDER"; }
+        auto head = row.removeFromTop (row.getHeight() * 0.55f);
+        auto stat = head.removeFromRight (150);
+        g.setColour (col); g.fillEllipse (stat.getX(), stat.getCentreY() - 4, 8, 8);
+        g.setFont (ledFont (10.0f));
+        g.drawFittedText (txt, stat.withTrimmedLeft (13).toNearestInt(), juce::Justification::centredLeft, 1, 0.7f);
+        g.setColour (pal::paint); g.setFont (tex::stencil (15.5f).withExtraKerningFactor (0.06f));
+        g.drawText (isMaster ? juce::String ("THE MASTER") : s->name.toUpperCase(), head.toNearestInt(), juce::Justification::bottomLeft);
+        g.setColour (pal::paintDim); g.setFont (bodyFont (10.5f));
+        g.drawFittedText (isMaster ? juce::String ("Measures the result; tone EQ (what the tracks can't fix) + safety limiter.") : s->role, row.toNearestInt(), juce::Justification::topLeft, 1, 0.75f);
     }
     if (! onTracks.isEmpty())
     {
-        r.removeFromTop (4);
-        g.setColour (pal::rustLight); g.setFont (tex::stencil (12.0f).withExtraKerningFactor (0.08f));
-        g.drawText ("ON YOUR TRACKS", r.removeFromTop (15).toNearestInt(), juce::Justification::centredLeft);
-        g.setColour (pal::paint.withAlpha (0.85f)); g.setFont (bodyFont (11.0f));
-        g.drawFittedText (onTracks.joinIntoString ("\n"), r.toNearestInt(), juce::Justification::topLeft, 4, 0.8f);
+        r.removeFromTop (2);
+        g.setColour (pal::paint.withAlpha (0.8f)); g.setFont (bodyFont (10.5f));
+        g.drawFittedText (onTracks.joinIntoString ("\n"), r.toNearestInt(), juce::Justification::topLeft, 3, 0.8f);
     }
 }
 
@@ -1403,6 +1442,7 @@ void MasterEditor::timerCallback()
             const auto& cp = proc.getChainPlan();
             chainView.hasPlan = cp.valid && proc.getChainStage() >= 1;
             chainView.steps = proc.chainStatus();
+            chainView.tracks = proc.trackStatus();
             chainView.onTracks = cp.onTracks;
             chainView.orderKnown = proc.chainOrderKnown();
             chainView.stage = proc.getChainStage();

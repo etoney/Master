@@ -2,6 +2,7 @@
 // THE MASTER - "MY PLUGINS" mode: a prescription of Castle Danger plugins for the master bus,
 // the exact settings for each, and a plain-English reason for every change.
 #include "Cure.h"
+#include "Tracks.h"
 
 namespace mst
 {
@@ -31,6 +32,8 @@ struct ChainPlan
     juce::StringArray onTracks;               // advice for individual tracks (BuzzKill, Flatliner...)
     juce::StringArray cantFix;
     Features before;                          // what the plan was made from
+    std::vector<TrackPlan> tracks;            // The Servant on each linked track
+    juce::String tracksNote;
 
     const ChainStep* step (const juce::String& kind) const
     {
@@ -70,6 +73,23 @@ struct ChainPlan
         o->setProperty ("onTracks", onTracks.joinIntoString ("\n"));
         o->setProperty ("cantFix", cantFix.joinIntoString ("\n"));
         o->setProperty ("before", before.toVar());
+        juce::Array<juce::var> tr;
+        for (auto& t : tracks)
+        {
+            auto* to = new juce::DynamicObject();
+            to->setProperty ("id", t.id); to->setProperty ("name", t.name); to->setProperty ("role", t.role);
+            to->setProperty ("share", (double) t.share); to->setProperty ("trim", (double) t.trimDb);
+            to->setProperty ("comp", (double) t.comp); to->setProperty ("compOn", t.compOn);
+            juce::Array<juce::var> e; for (auto v : t.eq) e.add ((double) v);
+            to->setProperty ("eq", e);
+            to->setProperty ("why", t.why.joinIntoString ("\n"));
+            auto* po = new juce::DynamicObject();
+            for (auto& [k, v] : t.params) po->setProperty (k, (double) v);
+            to->setProperty ("params", juce::var (po));
+            tr.add (juce::var (to));
+        }
+        o->setProperty ("tracks", tr);
+        o->setProperty ("tracksNote", tracksNote);
         return juce::var (o);
     }
 
@@ -103,6 +123,19 @@ struct ChainPlan
         c.onTracks = juce::StringArray::fromLines (v.getProperty ("onTracks", "").toString()); c.onTracks.removeEmptyStrings();
         c.cantFix = juce::StringArray::fromLines (v.getProperty ("cantFix", "").toString()); c.cantFix.removeEmptyStrings();
         c.before = Features::fromVar (v.getProperty ("before", {}));
+        if (auto* tr = v.getProperty ("tracks", {}).getArray())
+            for (auto& tv : *tr)
+            {
+                TrackPlan t;
+                t.id = tv.getProperty ("id", "").toString(); t.name = tv.getProperty ("name", "").toString(); t.role = tv.getProperty ("role", "").toString();
+                t.share = (float) (double) tv.getProperty ("share", 0.0); t.trimDb = (float) (double) tv.getProperty ("trim", 0.0);
+                t.comp = (float) (double) tv.getProperty ("comp", 0.0); t.compOn = tv.getProperty ("compOn", false);
+                if (auto* e = tv.getProperty ("eq", {}).getArray()) for (int b = 0; b < juce::jmin (kNumBands, e->size()); ++b) t.eq[(size_t) b] = (float) (double) (*e)[b];
+                t.why = juce::StringArray::fromLines (tv.getProperty ("why", "").toString()); t.why.removeEmptyStrings();
+                if (auto* po = tv.getProperty ("params", {}).getDynamicObject()) for (auto& p : po->getProperties()) t.params[p.name.toString()] = (float) (double) p.value;
+                c.tracks.push_back (t);
+            }
+        c.tracksNote = v.getProperty ("tracksNote", "").toString();
         return c;
     }
 };
@@ -111,6 +144,7 @@ inline juce::String plugDisplayName (const juce::String& kind)
 {
     if (kind == "chopshop") return "Chop Shop";
     if (kind == "dominatrix") return "Dominatrix";
+    if (kind == "servant") return "The Servant";
     if (kind == "master") return "The Master";
     return kind;
 }
@@ -236,7 +270,7 @@ inline ChainPlan planChain (const Features& in, const GenreProfile& g)
         c.onTracks.add ("BUZZKILL on the guitar and bass tracks: " + juce::String (in.humHz) + " Hz hum in the quiet parts. Fix it at the source, not on the master.");
     if (zLra > 1.5f)
         c.onTracks.add ("FLATLINER on the lead vocal if it's the part jumping in level.");
-    c.onTracks.add ("THE SERVANT on individual tracks (coming: it will link to The Master for per-instrument tone and balance).");
+    c.onTracks.add ("THE SERVANT on your tracks: set each one's ROLE, and The Master shares the tone, compression and level fixes out to the tracks that cause them.");
     return c;
 }
 } // namespace mst

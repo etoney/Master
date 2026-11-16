@@ -408,6 +408,58 @@ int main (int argc, char** argv)
         check (rt.valid && std::abs (rt.p.eq[3] - plan.p.eq[3]) < 1e-4f && rt.p.humHz == 50 && rt.whyEq == plan.whyEq, "plan survives a save/load");
     }
 
+
+    // ---------------- per-track planning (The Servant), from the MIX profile only
+    {
+        const auto& rock = factory.genres[0];
+        auto mix = meansOf (rock);
+        mix.band[3] += 5.0f; mix.band[5] -= 2.5f; mix.band[6] -= 2.5f;      // muddy and a bit dull
+        float t = 0; for (auto v : mix.band) t += std::pow (10.0f, v / 10.0f);
+        for (auto& v : mix.band) v -= 10.0f * std::log10 (t);
+        mix.plr = rock.stat (mst::fPlr).mean + 3.5f;                          // peaks stick out
+        // three tracks: rhythm guitar (lots of 250-500), bass (lows), lead vocal (1-4k, buried), snare (peaky)
+        const int T = 400;
+        std::vector<float> mixS (T, 0.0f);
+        std::vector<mst::TrackInfo> tr (4);
+        const char* names[] = { "Rhythm Gtr", "Bass DI", "Lead Vox", "Snare" };
+        const char* roles[] = { "Rhythm", "Bass", "Lead", "Snare" };
+        const double bp[4][10] = { { 0.01, 0.05, 0.4, 1.0, 0.5, 0.3, 0.2, 0.05, 0.01, 0.005 },
+                                   { 0.6, 1.0, 0.3, 0.1, 0.03, 0.01, 0.005, 0.001, 0.0, 0.0 },
+                                   { 0.0, 0.005, 0.03, 0.05, 0.06, 0.07, 0.05, 0.02, 0.01, 0.005 },
+                                   { 0.01, 0.05, 0.1, 0.1, 0.1, 0.08, 0.08, 0.06, 0.02, 0.01 } };
+        const double fader[4] = { 1.0, 0.5, 2.0, 1.0 };   // what the faders do after The Servant
+        for (int i = 0; i < 4; ++i)
+        {
+            tr[(size_t) i].id = "t" + juce::String (i); tr[(size_t) i].name = names[i]; tr[(size_t) i].role = roles[i]; tr[(size_t) i].seconds = 40;
+            double total = 0; for (int b = 0; b < 10; ++b) { tr[(size_t) i].bandPow[(size_t) b] = bp[i][b]; total += bp[i][b]; }
+            for (int k = 0; k < T; ++k)
+            {
+                double v = total;
+                if (i == 0) v *= 1.0 + 0.4 * std::sin (k * 0.13);
+                if (i == 1) v *= 1.0 + 0.5 * std::sin (k * 0.31 + 1.0);
+                if (i == 2) v *= (k / 40) % 2 == 0 ? 1.6 : 0.4;
+                if (i == 3) v *= k % 5 == 0 ? 6.0 : 0.3;                  // the snare hits = the mix's peaks
+                tr[(size_t) i].series.push_back ((float) v);
+                mixS[(size_t) k] += (float) (v * fader[i]);
+            }
+        }
+        auto res = mst::planTracks (mix, rock, tr, mixS);
+        check (res.tracks.size() == 4, "a plan for every linked track");
+        bool gainsOk = true;
+        for (int i = 0; i < 4; ++i) gainsOk = gainsOk && std::abs (res.tracks[(size_t) i].gainToMix - (float) fader[i]) < 0.1f * (float) fader[i];
+        check (gainsOk, juce::String::formatted ("each track's fader found from the fingerprints (%.2f %.2f %.2f %.2f)", res.tracks[0].gainToMix, res.tracks[1].gainToMix, res.tracks[2].gainToMix, res.tracks[3].gainToMix));
+        check (res.tracks[0].eq[3] < -1.0f && res.tracks[0].eq[3] < res.tracks[1].eq[3] && res.tracks[0].eq[3] < res.tracks[3].eq[3],
+               juce::String::formatted ("the mud (250-500 Hz) is cut mostly on the rhythm guitar that makes it (%.1f dB)", res.tracks[0].eq[3]));
+        check (res.tracks[1].eq[0] >= 0.0f && res.tracks[1].eq[1] >= 0.0f, juce::String::formatted ("the bass keeps its low end (sub %+.1f, bass %+.1f dB)", res.tracks[1].eq[0], res.tracks[1].eq[1]));
+        check (res.tracks[2].trimDb > 0.5f, juce::String::formatted ("the buried lead gets turned up (TRIM %+.1f dB)", res.tracks[2].trimDb));
+        check (res.tracks[3].compOn && ! res.tracks[0].compOn, juce::String::formatted ("the snare that makes the peaks gets compressed (%.0f%%), the guitar doesn't", res.tracks[3].comp));
+        check (! res.tracks[0].why.isEmpty() && res.tracks[0].why[0].contains ("% of the mix"), "every track's changes come with reasons");
+        bool maxSix = true;
+        for (auto& tp : res.tracks) { int k = 0; for (auto v : tp.eq) if (std::abs (v) >= 0.5f) ++k; maxSix = maxSix && k <= 6; }
+        check (maxSix, "no track gets more EQ moves than The Servant has bands (6)");
+        check (res.tracks[0].params.at ("toneOn") == 1.0f && std::abs (res.tracks[0].params.at ("t1g") - res.tracks[0].eq[3]) < 0.01f, "the biggest move goes on The Servant's band 1");
+    }
+
     // ---------------- processor
     {
         MasterProcessor p;
@@ -538,9 +590,11 @@ int main (int argc, char** argv)
         };
         Fake dom { "dominatrix", { { "discipline", 30 }, { "outputDb", 0 }, { "ceiling", 0 }, { "bassMono", 0 }, { "width", 100 }, { "satType", 0 }, { "saturation", 20 } } };
         Fake chop { "chopshop", { { "ceilingDb", 0 }, { "mode", 0 }, { "shape", 0 } } };
+        Fake gtr { "servant", { { "trim", 0 }, { "comp", 0 }, { "compOn", 0 }, { "toneOn", 0 } } };
+        Fake vox { "servant", { { "trim", 0 }, { "comp", 0 }, { "compOn", 0 }, { "toneOn", 0 } } };
         juce::var watcherEnv;
         cdlink::Endpoint watcher ("watch", [&] (const juce::var& m) { if (m.getProperty ("kind", "").toString() == "master" && m.getProperty ("type", "").toString() == "status") watcherEnv = m.getProperty ("env", {}); }, other);
-        for (auto* f : { &dom, &chop })
+        for (auto* f : { &dom, &chop, &gtr, &vox })
             f->ep = std::make_unique<cdlink::Endpoint> (f->kind, [f] (const juce::var& m)
             {
                 if (m.getProperty ("type", "").toString() != "set") return;
@@ -551,9 +605,10 @@ int main (int argc, char** argv)
                 r->setProperty ("params", juce::var (po));
                 f->ep->send (r, m.getProperty ("from", "").toString());
             }, other);
-        auto sendStatus = [&] (Fake& f, const juce::var& e)
+        auto sendStatus = [&] (Fake& f, const juce::var& e, juce::var extra = {})
         {
             auto m = cdlink::Endpoint::makeMessage ("status");
+            if (extra.isObject()) m->setProperty ("extra", extra);
             auto* po = new juce::DynamicObject(); for (auto& [k, v] : f.params) po->setProperty (k, v);
             m->setProperty ("params", juce::var (po)); m->setProperty ("env", e);
             f.ep->send (m);
@@ -575,6 +630,26 @@ int main (int argc, char** argv)
             return juce::var (o);
         };
 
+        // the Servants on two tracks report all along (their fingerprints: parts of The Master's input)
+        auto servantExtra = [] (const char* track, const char* role, std::initializer_list<double> bands)
+        {
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("track", track); o->setProperty ("role", role); o->setProperty ("seconds", 30.0);
+            juce::Array<juce::var> b; double tot = 0; for (auto v : bands) { b.add (v); tot += v; }
+            o->setProperty ("bandPow", b); o->setProperty ("pow", tot);
+            return juce::var (o);
+        };
+        const auto gtrX = servantExtra ("Rhythm Gtr", "Rhythm", { 0.001, 0.01, 0.05, 0.08, 0.04, 0.02, 0.01, 0.003, 0.001, 0.0005 });
+        const auto voxX = servantExtra ("Lead Vox", "Lead", { 0.0, 0.0005, 0.003, 0.006, 0.008, 0.009, 0.006, 0.002, 0.001, 0.0005 });
+        struct Pinger2 : juce::Timer { std::function<void()> f; void timerCallback() override { f(); } } trackPinger;
+        trackPinger.f = [&]
+        {
+            if (! watcherEnv.isObject()) return;
+            sendStatus (gtr, envWith (watcherEnv, "wobble", "wobble"), gtrX);
+            sendStatus (vox, envWith (watcherEnv, "spiky", "spiky"), voxX);
+        };
+        trackPinger.startTimer (250);
+
         // 1) your mix, nothing on the bus yet: quiet and peaky
         auto g = drumMix (0.3f);
         int64_t pos = 0;
@@ -590,7 +665,9 @@ int main (int argc, char** argv)
             }
         };
         p.setNonRealtime (true);
-        play (30.0, false);
+        play (18.0, false);
+        p.setNonRealtime (false);
+        for (int round = 0; round < 40; ++round) { play (0.3, true); pump (20); }   // a little real-time playback so the fingerprints line up
         p.getWorker().waitUntilIdle (8000);
         check (p.applyChain().isNotEmpty(), "APPLY needs a prescription first");
         check (p.prescribe().isEmpty() && p.getChainStage() == 1, "PRESCRIBE from the analysis");
@@ -600,6 +677,7 @@ int main (int argc, char** argv)
         check (cp.step ("chopshop")->params.at ("ceilingDb") < cp.before.samplePeak - 1.0f && cp.step ("chopshop")->params.at ("shape") == 1.0f, "Chop Shop: soft ceiling under the loudest peaks");
         bool allWhy = ! cp.changes.empty(); for (auto& c : cp.changes) allWhy = allWhy && c.why.isNotEmpty();
         check (allWhy, juce::String::formatted ("every planned change has a reason (%d changes)", (int) cp.changes.size()));
+        check (cp.tracks.size() == 2, juce::String::formatted ("the prescription includes the 2 linked Servants (%d)", (int) cp.tracks.size()));
         check (p.applyChain().contains ("Chop Shop") , "APPLY says which plugins are missing");
 
         // 2) the plugins appear (and keep reporting 4x a second, like the real ones);
@@ -633,10 +711,14 @@ int main (int argc, char** argv)
         check (p.getChainStage() == 2, "APPLY sends the settings");
         for (int i = 0; i < 40 && (dom.sets == 0 || chop.sets == 0); ++i) pump (50);
         pump (300);
+        check (gtr.sets == 1 && vox.sets == 1 && gtr.lastSet.getProperty ("params", {}).hasProperty ("trim") && gtr.lastSet.getProperty ("params", {}).hasProperty ("t1g"),
+               "both Servants received their tone / comp / trim settings");
         check (dom.sets == 1 && std::abs (dom.params["outputDb"] - cp.step ("dominatrix")->params.at ("outputDb")) < 0.01 && chop.sets == 1
                && std::abs (chop.params["ceilingDb"] - cp.step ("chopshop")->params.at ("ceilingDb")) < 0.01, "Dominatrix and Chop Shop received their settings");
         bool confirmed = true; int n = 0;
-        for (auto& e : p.getLog()) { if (e.plugin != "The Master") { confirmed = confirmed && e.confirmed; ++n; } }
+        int servantEntries = 0;
+        for (auto& e : p.getLog()) { if (e.plugin != "The Master") { confirmed = confirmed && e.confirmed; ++n; } if (e.plugin == "The Servant") ++servantEntries; }
+        check (servantEntries == 2, "the log has an entry per track");
         check (n > 5 && confirmed, juce::String::formatted ("the log explains every change and shows both plugins confirmed (%d entries)", n));
         bool fromShown = false;
         for (auto& e : p.getLog()) if (e.plugin == "Dominatrix" && e.title.startsWith ("OUTPUT  0.0 > ")) fromShown = true;
@@ -659,6 +741,7 @@ int main (int argc, char** argv)
         for (int i = 0; i < 20 && dom.sets == before; ++i) pump (50);
         check (dom.sets > before && p.getLog().back().detail.isNotEmpty(), "REFINE adjusts Dominatrix's OUTPUT from the measured loudness and explains it");
         pinger.stopTimer();
+        trackPinger.stopTimer();
         ped.reset();
 
         juce::MemoryBlock stt; p.getStateInformation (stt);

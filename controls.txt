@@ -160,7 +160,7 @@ MY PLUGINS  (The Master sets your Castle Danger plugins for you)
   the master bus, then sets their controls for you over Castle Danger Link
   (automatic, offline, on your computer only).
 
-  Needs Dominatrix 1.2 or later and Chop Shop 1.1 or later.
+  Needs Dominatrix 1.2+, Chop Shop 1.1+ and (for tracks) The Servant 0.3+.
 
   1. Play the whole song with only The Master on the master bus.
   2. PRESCRIBE. THE PRESCRIPTION lists the chain, in order, for example:
@@ -183,9 +183,26 @@ MY PLUGINS  (The Master sets your Castle Danger plugins for you)
   NEW PRESCRIPTION starts over (take the plugins off or bypass them and
   play the song again first, so The Master hears the untreated mix).
 
-  None of the linked plugins is an EQ, so The Master does the tone match
-  itself (its TONE MATCH EQ), followed by a -1 dBTP safety limiter.
-  Coming next: The Servant on individual tracks, linked to The Master.
+  THE SERVANT ON YOUR TRACKS (The Servant 0.3 or later)
+  Put The Servant on your tracks and set each one's ROLE (Lead, Rhythm,
+  Bass, Kick, Snare, Drums, Keys / Pads, Other). Each Servant tells The
+  Master what its track sends to the mix, band by band. The Master works out
+  each track's real level in the mix (faders, buses and sends included) by
+  comparing their level fingerprints with what it hears, and then:
+    TONE   shares the mix's tone correction out to the tracks that make
+           each band: the track that makes most of the mud gets most of the
+           cut. Kick and bass keep the low end, the lead keeps its presence.
+           Up to 6 moves per track (The Servant's 6 tone bands).
+    LEVEL  TRIMs the lead up if it's buried (or down if it's way on top).
+    COMP   compresses the tracks that make the mix's peaks, and a lead that
+           jumps around.
+  All of it comes from the genre's MIX profile: no instrument profiles and
+  no stem splitting. The tracks appear under YOUR TRACKS with their share
+  of the mix; APPLY sets them along with the master bus, and every change
+  is listed with its reason. Whatever the tracks can't fix, The Master's own
+  TONE MATCH EQ does, followed by a -1 dBTP safety limiter.
+  Tip: RESET on The Master also restarts every Servant's measurement, so
+  press RESET, play the whole song, then PRESCRIBE.
 
 
 -------------------------------------------------------------------------------

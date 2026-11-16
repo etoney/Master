@@ -46,6 +46,7 @@ class ChainView : public juce::Component
 public:
     void paint (juce::Graphics&) override;
     std::vector<MasterProcessor::StepStatus> steps;
+    std::vector<MasterProcessor::TrackStatus> tracks;
     juce::StringArray onTracks;
     bool hasPlan = false, orderKnown = false;
     int stage = 0;

@@ -355,6 +355,8 @@ public:
     EnvTap env;                                  // feed from processBlock
     std::function<juce::var()> extraStatus;      // optional extra fields (e.g. input peak)
     std::function<void (const juce::StringArray& changed)> onSetByMaster;
+    std::function<void()> onBeforeSet;                        // e.g. so the plugin doesn't mark these as user overrides
+    std::function<void (const juce::var& msg)> onOtherMessage; // anything that isn't hello / set
 
     bool masterNearby() const { return lastMasterMs > 0 && juce::Time::getMillisecondCounter() - lastMasterMs < 3000; }
     juce::String getLastNote() const { return lastNote; }
@@ -383,6 +385,7 @@ private:
         if (type == "hello") sendStatus (from);
         else if (type == "set")
         {
+            if (onBeforeSet) onBeforeSet();
             const auto changed = applySet (apvts, m.getProperty ("params", {}));
             lastNote = m.getProperty ("note", "").toString();
             lastNoteMs = juce::Time::getMillisecondCounter();
@@ -392,6 +395,7 @@ private:
             r->setProperty ("changed", changed.joinIntoString (","));
             endpoint.send (r, from);
         }
+        else if (onOtherMessage) onOtherMessage (m);
     }
 
     APVTS& apvts;

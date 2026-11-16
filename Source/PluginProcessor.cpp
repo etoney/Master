@@ -332,6 +332,9 @@ void MasterProcessor::resetAnalysis()
 {
     worker.requestReset();
     postWorker.requestReset();
+    myHist.clear();
+    peerHist.clear();
+    if (link) link->send (cdlink::Endpoint::makeMessage ("measure-reset"));   // linked Servants restart their track measurement too
     savedFeatures = {};
 }
 
@@ -391,6 +394,8 @@ void MasterProcessor::setStateInformation (const void* data, int sizeInBytes)
             chainLog.clear();
             for (auto& c : chainPlan.changes)
                 chainLog.push_back ({ mst::plugDisplayName (c.plugin), c.label, c.why, chainStage >= 2 });
+            for (auto& t : chainPlan.tracks)
+                chainLog.push_back ({ "The Servant", t.name + " (" + t.role + ")  " + t.summary(), t.why.joinIntoString ("\n"), chainStage >= 2 });
             state.removeProperty ("analysis", nullptr);
             state.removeProperty ("autoFix", nullptr);
             state.removeProperty ("chainPlan", nullptr);
@@ -410,7 +415,7 @@ void MasterProcessor::onLinkMessage (const juce::var& m)
     const auto from = m.getProperty ("from", "").toString();
     const auto kind = m.getProperty ("kind", "").toString();
     if (kind == "master") return;
-    if (type == "bye") { peers.erase (from); ++linkVersion; return; }
+    if (type == "bye") { peers.erase (from); peerHist.erase (from); ++linkVersion; return; }
     if (type == "status" || type == "applied")
     {
         auto& p = peers[from];
@@ -422,12 +427,13 @@ void MasterProcessor::onLinkMessage (const juce::var& m)
             p.version = m.getProperty ("version", "").toString();
             p.env = m.getProperty ("env", {});
             p.extra = m.getProperty ("extra", {});
+            if (kind == "servant") mergeEnv (peerHist[from], p.env, "out");
         }
         p.params = m.getProperty ("params", p.params);
         p.seen = juce::Time::getMillisecondCounter();
         if (type == "applied")
             for (auto& e : chainLog)
-                if (e.plugin == mst::plugDisplayName (kind)) e.confirmed = true;
+                if (e.peerId.isNotEmpty() ? e.peerId == from : e.plugin == mst::plugDisplayName (kind)) e.confirmed = true;
         if (isNew || type == "applied") ++linkVersion;
     }
 }
@@ -440,8 +446,51 @@ void MasterProcessor::linkTick()
         else ++it;
     auto m = cdlink::Endpoint::makeMessage ("status");
     m->setProperty ("name", "The Master");
-    m->setProperty ("env", env.toVar());
+    const auto e = env.toVar();
+    m->setProperty ("env", e);
     link->send (m);
+    if (isListening()) mergeEnv (myHist, e, "in");
+}
+
+void MasterProcessor::mergeEnv (std::map<juce::int64, float>& hist, const juce::var& env, const char* key)
+{
+    const auto* a = env.getProperty (key, {}).getArray();
+    if (a == nullptr) return;
+    const auto first = (juce::int64) (double) env.getProperty ("slot", 0.0);
+    for (int i = 0; i < a->size(); ++i)
+    {
+        const double db = (*a)[i];
+        if (db <= -99.0) continue;
+        hist[first + i] = (float) std::pow (10.0, db / 10.0);
+    }
+    while (hist.size() > 12000) hist.erase (hist.begin());   // keep the last 20 minutes
+}
+
+std::vector<MasterProcessor::TrackStatus> MasterProcessor::trackStatus() const
+{
+    std::vector<TrackStatus> out;
+    std::set<juce::String> seen;
+    for (auto& t : chainPlan.tracks)
+    {
+        TrackStatus s;
+        s.peerId = t.id; s.name = t.name; s.role = t.role; s.share = t.share; s.summary = t.summary(); s.planned = true;
+        s.linked = peers.count (t.id) > 0;
+        if (s.linked) { const auto& ex = peers.at (t.id).extra; s.role = ex.getProperty ("role", s.role).toString(); }
+        seen.insert (t.id);
+        out.push_back (s);
+    }
+    for (auto& [id, p] : peers)
+    {
+        if (p.kind != "servant" || seen.count (id)) continue;
+        TrackStatus s;
+        s.peerId = id; s.linked = true;
+        s.name = p.extra.getProperty ("track", "").toString();
+        if (s.name.isEmpty()) s.name = "(track name not given by the DAW)";
+        s.role = p.extra.getProperty ("role", "Other").toString();
+        s.summary = chainStage >= 1 ? "joined after PRESCRIBE: press NEW PRESCRIPTION to include it" : "linked";
+        out.push_back (s);
+    }
+    return out;
 }
 
 std::vector<MasterProcessor::Peer> MasterProcessor::getPeers() const
@@ -463,7 +512,7 @@ std::vector<juce::String> MasterProcessor::detectChain() const
         juce::String best; float bestD = 0.6f;
         for (auto& [id, p] : peers)
         {
-            if (used.count (id) || ! p.env.isObject()) continue;
+            if (used.count (id) || ! p.env.isObject() || p.kind == "servant") continue;   // Servants sit on tracks, not on the bus
             int shared = 0;
             const float d = cdlink::envDistance (p.env, "out", cur, curKey, shared);
             if (shared >= 12 && d < bestD) { bestD = d; best = id; }
@@ -533,6 +582,54 @@ juce::String MasterProcessor::prescribe()
     const auto& genres = library.genres();
     if (target.index < 0 || target.index >= (int) genres.size()) return "No genre profile to aim for.";
     chainPlan = mst::planChain (in, genres[(size_t) target.index]);
+
+    // The Servants on the tracks: tone, compression and balance shared out to the tracks that cause them
+    std::vector<mst::TrackInfo> tracks;
+    std::vector<juce::int64> slots;
+    for (auto& [slot, v] : myHist) if (v > 1e-9f) slots.push_back (slot);
+    std::vector<float> mixSeries;
+    std::vector<juce::String> servantIds;
+    for (auto& [id, p] : peers)
+    {
+        if (p.kind != "servant") continue;
+        const auto* bp = p.extra.getProperty ("bandPow", {}).getArray();
+        if (bp == nullptr || bp->size() != mst::kNumBands) continue;
+        mst::TrackInfo t;
+        t.id = id;
+        t.name = p.extra.getProperty ("track", "").toString();
+        t.role = p.extra.getProperty ("role", "Other").toString();
+        for (int b = 0; b < mst::kNumBands; ++b) t.bandPow[(size_t) b] = (double) (*bp)[b];
+        t.pow = p.extra.getProperty ("pow", 0.0);
+        t.seconds = p.extra.getProperty ("seconds", 0.0);
+        if (t.seconds < 1.0) continue;   // silent track (or nothing measured yet)
+        tracks.push_back (t);
+    }
+    // series on the slots everyone has
+    std::vector<juce::int64> common;
+    for (auto s : slots)
+    {
+        bool ok = true;
+        for (auto& t : tracks) { auto it = peerHist.find (t.id); if (it == peerHist.end() || it->second.count (s) == 0) { ok = false; break; } }
+        if (ok) common.push_back (s);
+    }
+    for (auto s : common) mixSeries.push_back (myHist.at (s));
+    for (auto& t : tracks) for (auto s : common) t.series.push_back (peerHist.at (t.id).at (s));
+    if (! tracks.empty())
+    {
+        auto tr = mst::planTracks (in, genres[(size_t) target.index], tracks, mixSeries);
+        chainPlan.tracks = tr.tracks;
+        chainPlan.tracksNote = tr.note;
+        // The Master's own EQ only does what the tracks couldn't
+        chainPlan.masterFix.eq = tr.residualEq;
+        bool any = false; for (auto v : tr.residualEq) if (std::abs (v) >= 0.5f) any = true;
+        chainPlan.masterFix.eqOn = any;
+        chainPlan.masterEq = any;
+        for (auto it = chainPlan.changes.begin(); it != chainPlan.changes.end();)
+            if (it->plugin == "master" && it->param == "eq") it = chainPlan.changes.erase (it); else ++it;
+        if (any) chainPlan.changes.push_back ({ "master", "eq", "TONE MATCH EQ", 1.0f, 1.0f, "ON",
+                                                "Only what the tracks couldn't fix within 6 dB each.", false });
+        if (tr.note.isNotEmpty()) chainPlan.onTracks.add (tr.note);
+    }
     chainStage = 1;
     chainLog.clear();
     ++linkVersion;
@@ -562,6 +659,15 @@ juce::String MasterProcessor::applyChain()
                 if (c.hasFrom) c.from = (float) (double) peer.params.getProperty (c.param, 0.0);
             }
     }
+    // The Servants
+    int tracksSet = 0;
+    for (auto& t : chainPlan.tracks)
+    {
+        if (peers.count (t.id) == 0) continue;
+        sendSet (t.id, t.params, "The Master: " + chainPlan.genreName + " mix balance");
+        ++tracksSet;
+    }
+
     // The Master's own part: tone EQ + safety limiter, nothing else
     const auto& f = chainPlan.masterFix;
     plan = {};
@@ -583,6 +689,12 @@ juce::String MasterProcessor::applyChain()
         }
         else title << "  " << c.unit;
         chainLog.push_back ({ mst::plugDisplayName (c.plugin), title, c.why, c.plugin == "master" });
+    }
+    for (auto& t : chainPlan.tracks)
+    {
+        const bool there = peers.count (t.id) > 0;
+        chainLog.push_back ({ "The Servant", t.name + " (" + t.role + ")  " + (there ? t.summary() : juce::String ("NOT LINKED, SKIPPED")),
+                              t.why.joinIntoString ("\n"), false, t.id });
     }
     chainStage = 2;
     resetAnalysis();
