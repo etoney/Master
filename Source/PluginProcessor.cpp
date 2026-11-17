@@ -523,7 +523,7 @@ std::vector<MasterProcessor::TrackStatus> MasterProcessor::trackStatus() const
         s.name = p.extra.getProperty ("track", "").toString();
         if (s.name.isEmpty()) s.name = "(track name not given by the DAW)";
         s.role = p.kind == "servant" ? p.extra.getProperty ("role", "Other").toString() : mst::plugDisplayName (p.kind).toUpperCase();
-        s.summary = chainStage >= 1 ? "joined after PRESCRIBE: press NEW PRESCRIPTION to include it" : "linked";
+        s.summary = chainStage >= 1 ? "linked: press UPDATE to include it" : "linked";
         out.push_back (s);
     }
     return out;
@@ -609,10 +609,10 @@ void MasterProcessor::sendSet (const juce::String& peerId, const std::map<juce::
     link->send (m, peerId);
 }
 
-juce::String MasterProcessor::prescribe()
+juce::String MasterProcessor::prescribe (bool fromFrozen)
 {
     bool saved = false;
-    auto in = getDisplayFeatures (saved);
+    auto in = fromFrozen && chainPlan.valid ? chainPlan.before : getDisplayFeatures (saved);
     if (! in.valid) return "Play the whole song first (with no plugins on the master bus before The Master), then press PRESCRIBE.";
     const auto target = resolveTarget (in);
     const auto& genres = library.genres();
@@ -718,10 +718,10 @@ juce::String MasterProcessor::prescribe()
     if (! anyLowBlow && clash.found)
     {
         chainPlan.adds.push_back ({ "lowblow", clash.bassName, "It and " + clash.kickName + " fight in " + juce::String (mst::bandDefs()[(size_t) clash.band].label)
-                                    + " (" + mst::bandDefs()[(size_t) clash.band].range + " Hz). Send the kick to Low Blow's sidechain, then PRESCRIBE again." });
+                                    + " (" + mst::bandDefs()[(size_t) clash.band].range + " Hz). Send the kick to Low Blow's sidechain, then press UPDATE." });
         chainPlan.onTracks.add ("LOW BLOW on " + clash.bassName + ": it and " + clash.kickName + " fight "
                                 + juce::String (mst::bandDefs()[(size_t) clash.band].label) + " (" + mst::bandDefs()[(size_t) clash.band].range
-                                + " Hz), " + juce::String (clash.gapDb, 1) + " dB apart. Low Blow ducks the bass under each kick; send the kick to its sidechain, then PRESCRIBE again.");
+                                + " Hz), " + juce::String (clash.gapDb, 1) + " dB apart. Low Blow ducks the bass under each kick; send the kick to its sidechain, then press UPDATE.");
     }
     if (! anyFlat)
     {
@@ -734,9 +734,9 @@ juce::String MasterProcessor::prescribe()
             {
                 for (int k = chainPlan.onTracks.size(); --k >= 0;) if (chainPlan.onTracks[k].startsWith ("FLATLINER")) chainPlan.onTracks.remove (k);
                 chainPlan.removeAdds ("flatliner");
-                chainPlan.adds.push_back ({ "flatliner", tracks[i].name, "Its level swings " + juce::String (swing, 0) + " dB. Put Flatliner first on the track, then PRESCRIBE again." });
+                chainPlan.adds.push_back ({ "flatliner", tracks[i].name, "Its level swings " + juce::String (swing, 0) + " dB. Put Flatliner first on the track, then press UPDATE." });
                 chainPlan.onTracks.insert (0, "FLATLINER on " + (tracks[i].name.isNotEmpty() ? tracks[i].name : juce::String ("the lead"))
-                                              + ": its level swings " + juce::String (swing, 0) + " dB. Put it first on that track, then PRESCRIBE again.");
+                                              + ": its level swings " + juce::String (swing, 0) + " dB. Put it first on that track, then press UPDATE.");
                 break;
             }
         }
@@ -936,12 +936,38 @@ juce::String MasterProcessor::servantOnSameTrack (const Peer& h) const
     return best;
 }
 
-void MasterProcessor::requestPrescribe (std::function<void (const juce::String&)> done)
+bool MasterProcessor::chainOutdated() const
+{
+    if (! chainPlan.valid || chainStage < 1) return false;
+    std::set<juce::String> planned;
+    for (auto& t : chainPlan.tracks) { planned.insert (t.id); if (peers.count (t.id) == 0) return true; }   // one went away
+    for (auto& [id, p] : peers)
+    {
+        if (! isTrackKind (p.kind) || planned.count (id)) continue;
+        // a Servant added later can only be planned once it has heard its track
+        if (p.kind == "servant" && (double) p.extra.getProperty ("seconds", 0.0) < 1.0) continue;
+        return true;
+    }
+    return false;
+}
+
+void MasterProcessor::requestUpdate (std::function<void (const juce::String&)> done)
+{
+    const bool wasApplied = chainStage >= 2;
+    requestPrescribe ([this, wasApplied, done] (const juce::String& err)
+    {
+        juce::String e = err;
+        if (e.isEmpty() && wasApplied) e = applyChain();   // keep it applied: send the new settings straight away
+        if (done) done (e);
+    }, true);
+}
+
+void MasterProcessor::requestPrescribe (std::function<void (const juce::String&)> done, bool fromFrozen)
 {
     finishWaiting.clear();
     for (auto& [id, p] : peers)
         if (p.kind == "servant" && (bool) p.extra.getProperty ("listening", false)) finishWaiting.insert (id);
-    if (finishWaiting.empty() || ! link) { const auto err = prescribe(); if (done) done (err); return; }
+    if (finishWaiting.empty() || ! link) { const auto err = prescribe (fromFrozen); if (done) done (err); return; }
 
     ++finishSeq;
     auto m = cdlink::Endpoint::makeMessage ("analyze-finish");   // each Servant decides its resonances + clean-up now
@@ -949,7 +975,7 @@ void MasterProcessor::requestPrescribe (std::function<void (const juce::String&)
     link->send (m);
     finishSentMs = juce::Time::getMillisecondCounter();
     pendingPrescribe = std::move (done);
-    finishTimer.fn = [this]
+    finishTimer.fn = [this, fromFrozen]
     {
         for (auto it = finishWaiting.begin(); it != finishWaiting.end();)
         {
@@ -961,7 +987,7 @@ void MasterProcessor::requestPrescribe (std::function<void (const juce::String&)
         finishTimer.stopTimer();
         auto cb = std::move (pendingPrescribe);
         pendingPrescribe = nullptr;
-        const auto err = prescribe();
+        const auto err = prescribe (fromFrozen);
         if (cb) cb (err);
     };
     finishTimer.startTimer (50);

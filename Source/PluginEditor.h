@@ -220,6 +220,7 @@ public:
     void refreshNow() { lastSnap = -1; timerCallback(); }
     void showPage (int p) { setPage (p); refreshNow(); }
     void pressAutoFix() { autoFixButton.triggerClick(); }
+    juce::String mainButtonText() const { return autoFixButton.getButtonText(); }
 
 private:
     struct Plate { juce::String title; juce::Rectangle<int> bounds; bool hot = false; };
@@ -290,7 +291,7 @@ private:
     std::vector<std::unique_ptr<FixSection>> sections;
     FixInfo fixInfo;
     std::vector<juce::Component*> analyzeComps, fixComps, chainComps;
-    juce::TextButton builtInButton { "OR USE BUILT-IN FIXES" }, nextButton { "NEXT: PRESCRIBE  >" };
+    juce::TextButton builtInButton { "OR USE BUILT-IN FIXES" }, nextButton { "GO TO FIX  >" };
     void showMyProfilesMenu();
     void promptNewSongProfile();
     std::unique_ptr<juce::AlertWindow> nameDialog;
@@ -298,7 +299,9 @@ private:
     ChainView chainView;
     juce::Viewport logViewport;
     ChangeLog changeLog;
-    juce::TextButton newRxButton { "NEW PRESCRIPTION" };
+    juce::TextButton newRxButton { "START OVER" };
+    juce::String chainButtonText() const;
+    bool lastOutdated = false;
     int lastLinkVersion = -1, lastChainSig = -1;
     int lastPlanSig = 0;
     std::unique_ptr<juce::FileChooser> chooser;

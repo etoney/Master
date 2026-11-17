@@ -12,16 +12,15 @@ tells you which one and how to set it.
 
 It has two pages:
   ANALYZE   the report. Your audio passes through untouched.
-            NEXT: PRESCRIBE takes you to the fix.
+            GO TO FIX takes you to the fix and prescribes straight away.
   FIX IT WITH MY PLUGINS
             The Master prescribes your Castle Danger plugins (which ones, in
             what order, on the bus and on your tracks), then sets every knob
             for you and tells you why. Five steps, shown on the left:
             LISTEN, PRESCRIBE, PLACE THE PLUGINS, APPLY, REFINE.
-  OR USE BUILT-IN FIXES (top right of FIX IT)
-            No Castle Danger plugins? The Master fixes the mix itself with
-            its own tone EQ, dynamics, stereo, hum and loudness tools (AUTO
-            FIX). BACK TO MY PLUGINS returns.
+  ONE BUTTON on FIX IT always does the next step: PRESCRIBE, then APPLY,
+            then REFINE. It says UPDATE when you've added or removed plugins
+            on your tracks since the prescription.
 
 
 -------------------------------------------------------------------------------
@@ -113,53 +112,6 @@ THE VERDICT
     each of the ten tonal bands, and 50/60 Hz hum in the quiet parts.
 
 
--------------------------------------------------------------------------------
-BUILT-IN FIXES  (The Master corrects the mix itself, with override)
--------------------------------------------------------------------------------
-  On FIX IT, press OR USE BUILT-IN FIXES.
-  1. Play the whole song (ANALYZE page) so The Master has heard it.
-  2. Press AUTO FIX. Every section below gets set for you,
-     aiming at the genre. The report switches to AFTER FIXES.
-  3. Play the song again. THE CURE shows YOUR MIX score > AFTER FIXES score.
-  4. Press AUTO FIX once more after that play-through: it measures what came
-     out and fine-tunes the loudness to land on target.
-  5. Override anything you like (see below). Then bounce.
-
-  FIXES ON     all fixes on/off. Flip it to compare with your original.
-  MATCH LEVELS plays the fixed version back at your mix's loudness, so you
-               judge tone and punch, not just "louder". TURN IT OFF BEFORE YOU
-               BOUNCE, or you'll lose the loudness.
-  AMOUNT       how much of the EQ, leveler, peak tamer and width moves to
-               use. 100 % = as set.
-
-  OVERRIDING
-    Every knob and fader works like normal. Yellow arrows/markers show what
-    AUTO FIX chose. When you move something, that section's AUTO button
-    turns yellow; click it to put the section back. Each section's ON switch
-    turns it off entirely. Pressing AUTO FIX again resets everything.
-    All settings save with your project and can be automated.
-
-  TONE MATCH EQ  ten faders, the same bands as the analysis. AUTO FIX pulls
-                 each band toward the genre (up to 6 dB, leaving a little of
-                 your mix's character) without changing the overall level.
-  DYNAMICS       LEVELER: slowly lifts quiet sections, turns sudden loud
-                 entrances down (for big level swings).
-                 TAME PEAKS: look-ahead limiting of the peaks that stick out
-                 of the mix (usually kick and snare); the threshold follows
-                 the music.
-  STEREO         WIDTH above 120 Hz (100 % = unchanged); BASS MONO makes
-                 everything below 120 Hz mono.
-  HUM            notches 50 or 60 Hz mains hum and 2 harmonics. BuzzKill on
-                 the guitar/bass tracks is the better fix: it doesn't touch
-                 the bass notes.
-  LOUDNESS       GAIN pushes the mix into a true-peak limiter at the
-                 CEILING: -1.0 dBTP for streaming, -2.0 extra safe for
-                 MP3/AAC, -0.3 for CD/download masters.
-
-  What AUTO FIX can't do (listed under FIX THESE IN THE MIX):
-    clipping that's already in the mix, a mix that's already over-squashed,
-    and out-of-phase tracks. Those have to be fixed at the source.
-
   Latency: with or without fixes, The Master delays the audio by about
   8 ms (reported to your DAW, which compensates automatically).
 
@@ -167,8 +119,8 @@ BUILT-IN FIXES  (The Master corrects the mix itself, with override)
 -------------------------------------------------------------------------------
 FIX IT WITH MY PLUGINS  (the main way: The Master sets your plugins for you)
 -------------------------------------------------------------------------------
-  This is what FIX IT opens on. Instead of fixing the mix itself, The
-  Master tells you which Castle Danger plugins to put on
+  The Master doesn't fix the mix itself: it tells you which Castle Danger
+  plugins to put on
   the master bus, then sets their controls for you over Castle Danger Link
   (automatic, offline, on your computer only).
 
@@ -176,7 +128,7 @@ FIX IT WITH MY PLUGINS  (the main way: The Master sets your plugins for you)
   The Servant 0.6+,
   BuzzKill 2.1+, Flatliner 1.1+ and Low Blow 1.0+.
 
-  OUTPUT (top of THE CURE, both FIX IT pages)
+  OUTPUT (top of THE CURE)
     -6 dB  (default) a pre-master for a separate mastering step: peaks are
            held just under -6 dBFS (Dominatrix CEILING -6 dB, safety
            limiter -6 dBTP) and nothing is pushed for loudness. The report
@@ -188,14 +140,18 @@ FIX IT WITH MY PLUGINS  (the main way: The Master sets your plugins for you)
     and sends the new settings. Projects made before 1.7 open on -1 dB.
 
   1. Play the whole song with only The Master on the master bus.
-  2. PRESCRIBE. THE PRESCRIPTION lists the chain, in order, for example:
+  2. GO TO FIX (on ANALYZE) prescribes straight away; if it hadn't heard
+     enough yet, keep playing and press PRESCRIBE. THE PRESCRIPTION lists
+     the chain, in order, for example:
         1 THE FREAK   dynamic EQ: cuts the ranges that jump out, only when
                       they do (only prescribed when your mix needs it)
         2 CHOP SHOP   shaves the peaks that stick out
         3 DOMINATRIX  glue, colour, stereo; loudness into the -1 dB ceiling,
                       or peaks held at -6 dB with OUTPUT at -6 dB
         4 THE MASTER  last: measures, plus the tone EQ and a safety limiter
-     plus advice for individual tracks (BuzzKill for hum, Flatliner...).
+     and YOUR TRACKS: each track with the plugins to put on it, in order.
+     Green lamp = linked to The Master, red ring = add it. The last row is
+     the reminder: The Servant on every track you want balanced.
   3. Put the plugins on the master bus in that order, BEFORE The Master.
      Each one shows LINKED as soon as it's found. Play a few seconds and The
      Master checks they're in the right order (it compares their levels).
@@ -209,6 +165,13 @@ FIX IT WITH MY PLUGINS  (the main way: The Master sets your plugins for you)
      Shop's CEILING if the peaks still stick out), and explains each step.
   Override anything on the plugins themselves at any time.
 
+  UPDATE: added BuzzKill, Flatliner, Low Blow or The Servant to a track (or
+  took one off) after prescribing? The new one turns green as soon as it
+  links, and the main button says UPDATE. Press it: The Master plans the
+  tracks again from the same analysis (no need to play the song again) and,
+  if you'd already applied, sends the new settings straight away. A Servant
+  added later needs to hear its track first: play the song, then UPDATE.
+
   THE FREAK (dynamic EQ)
   While it listens, The Master measures how far each range (sub, bass, low,
   low mid, mid, hi mid, presence, bite, sheen) jumps above its usual share
@@ -220,8 +183,9 @@ FIX IT WITH MY PLUGINS  (the main way: The Master sets your plugins for you)
   stays with The Master's TONE MATCH EQ, so the two never fight. Each Freak
   band shows The Master's reason under its knobs.
 
-  NEW PRESCRIPTION starts over (take the plugins off or bypass them and
-  play the song again first, so The Master hears the untreated mix).
+  START OVER (top right of the prescription) is only for big changes to
+  the mix itself: bypass the bus plugins, RESET, play the song again, then
+  press it, so The Master hears the untreated mix.
 
   THE SERVANT ON YOUR TRACKS (The Servant 0.6 or later)
   Put The Servant on your tracks and set each one's ROLE (Lead, Rhythm,
@@ -309,7 +273,7 @@ MY PROFILES  (your own, from songs you pick)
     Windows: %APPDATA%\Castle Danger\The Master\Profiles\My Profiles\<name>\
 
   Pick one from MY PROFILES. It works everywhere a genre does: the report,
-  the prescription for your plugins, the built-in fixes. AUTO also
+  the prescription for your plugins. AUTO also
   considers your profiles. The profile is saved inside your project, so it
   opens right on another computer too.
 

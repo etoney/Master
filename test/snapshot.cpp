@@ -1048,6 +1048,30 @@ int main (int argc, char** argv)
         pme->refreshNow();
         check (writePng (ped->createComponentSnapshot (ped->getLocalBounds(), true, 2.0f), dir.getChildFile ("gui_plugins_applied.png")), "MY PLUGINS: applied, with the change log");
 
+        // 3b) a track plugin added after APPLY: the main button says UPDATE, which plans it in from the
+        //     same analysis (no replay) and sends it its settings, still applied
+        Fake bk2 { "buzzkill", { { "release", 0.35 }, { "listen", 0 } } };
+        bk2.ep = std::make_unique<cdlink::Endpoint> ("buzzkill", [&bk2] (const juce::var& m)
+        {
+            if (m.getProperty ("type", "").toString() != "set") return;
+            bk2.lastSet = m; ++bk2.sets;
+            auto r = cdlink::Endpoint::makeMessage ("applied");
+            r->setProperty ("params", m.getProperty ("params", {}));
+            bk2.ep->send (r, m.getProperty ("from", "").toString());
+        }, other);
+        const auto bk2X = plainExtra ({ { "track", "Lead Gtr" }, { "floorDb", -60.0 }, { "playDb", -20.0 }, { "seconds", 30.0 }, { "learned", true } });
+        struct Pinger3 : juce::Timer { std::function<void()> f; void timerCallback() override { f(); } } bk2Pinger;
+        bk2Pinger.f = [&] { if (watcherEnv.isObject()) sendStatus (bk2, envWith (watcherEnv, "same", "same"), bk2X); };
+        bk2Pinger.startTimer (250);
+        for (int i = 0; i < 20 && ! p.chainOutdated(); ++i) pump (50);
+        pme->refreshNow();
+        check (p.chainOutdated() && pme->mainButtonText() == "UPDATE", "a BuzzKill added after APPLY: the main button says UPDATE (" + pme->mainButtonText() + ")");
+        pme->pressAutoFix();
+        for (int i = 0; i < 80 && bk2.sets == 0; ++i) pump (50);
+        pme->refreshNow();
+        check (p.getChainStage() == 2 && ! p.chainOutdated() && bk2.sets == 1 && pme->mainButtonText() == "REFINE",
+               "UPDATE plans the new BuzzKill in from the same analysis, sends its settings, and stays applied");
+
         // 4) REFINE from what came out
         check (p.refineChain().isNotEmpty(), "REFINE waits for a play-through");
         dom.params["outputDb"] = 2.0;   // you turned Dominatrix's OUTPUT down by hand (the fakes don't change the audio, so the mix is still quiet)
@@ -1116,20 +1140,11 @@ int main (int argc, char** argv)
         me->showPage (1);
         check (q.isPluginMode(), "FIX IT opens on MY PLUGINS");
         check (writePng (ed->createComponentSnapshot (ed->getLocalBounds(), true, 2.0f), dir.getChildFile ("gui_fix_plugins.png")), "FIX IT with my plugins (first)");
+        // built-in fixes are retired from the UI: the FIX page is always MY PLUGINS
         q.setPluginMode (false);
         me->showPage (1);
-        // BUILT-IN FIXES, before and after AUTO FIX, then with an override
-        check (writePng (ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f), dir.getChildFile ("gui_fix_empty.png")), "FIX IT page before AUTO FIX");
-        me->pressAutoFix();
-        juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
-        me->refreshNow();
-        check (q.isFixOn() && q.getPlan().valid, "AUTO FIX button works from the saved report");
-        check (writePng (ed->createComponentSnapshot (ed->getLocalBounds(), true, 2.0f), dir.getChildFile ("gui_fix.png")), "FIX IT page after AUTO FIX");
-        q.apvts.getParameter ("eq6")->setValueNotifyingHost (q.apvts.getParameter ("eq6")->convertTo0to1 (6.0f));
-        q.apvts.getParameter ("width")->setValueNotifyingHost (q.apvts.getParameter ("width")->convertTo0to1 (125.0f));
-        juce::MessageManager::getInstance()->runDispatchLoopUntil (150);
-        me->refreshNow();
-        check (writePng (ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f), dir.getChildFile ("gui_fix_override.png")), "FIX IT page with overrides");
+        check (q.isPluginMode(), "built-in fixes retired: the FIX page switches back to MY PLUGINS");
+        check (q.applyAutoFix().isEmpty() && q.getPlan().valid, "the fix engine still plans (The Master's own EQ + limiter use it)");
         q.revertToAuto (MasterProcessor::secEq); q.revertToAuto (MasterProcessor::secStereo);
         me->showPage (0);
 
@@ -1193,7 +1208,7 @@ int main (int argc, char** argv)
         auto* list = vp != nullptr ? vp->getViewedComponent() : nullptr;
         check (vp != nullptr && vp->isVisible() && list != nullptr && list->getHeight() > vp->getHeight(),
                "YOUR TRACKS: 8 tracks don't fit, so the list scrolls (no '+ more, see the log')");
-        check (list != nullptr && list->getHeight() == 8 * TrackChainList::rowH, "YOUR TRACKS: one row per track (BuzzKill and Servant on the same track share a row)");
+        check (list != nullptr && list->getHeight() == 9 * TrackChainList::rowH, "YOUR TRACKS: one row per track (BuzzKill and Servant share a row) + the Servant reminder");
         juce::Image img (juce::Image::ARGB, 772 * 2, 198 * 2, true);
         { juce::Graphics g (img); g.addTransform (juce::AffineTransform::scale (2.0f)); g.fillAll (juce::Colour (0xff1d1815)); cv.paintEntireComponent (g, true); }
         check (writePng (img, dir.getChildFile ("your_tracks_scroll.png")), "YOUR TRACKS snapshot");

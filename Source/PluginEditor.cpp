@@ -477,13 +477,14 @@ void TrackChainList::paint (juce::Graphics& g)
         {
             const auto& p = row.plugs[k];
             const auto label = labelOf (p, (int) k + 1);
-            const auto col = p.status == 0 ? ok : (p.status == 2 ? pal::hazard : pal::signalHot);
+            const bool on = p.status == 0 || p.status == 2;   // linked to The Master (2: not planned yet, UPDATE does it)
+            const auto col = on ? ok : (p.status == 4 ? pal::paintDim : pal::signalHot);
             auto lamp = juce::Rectangle<float> (7, 7).withCentre ({ x + 3.5f, line.getCentreY() });
-            if (p.status == 0) { juce::Path lp; lp.addEllipse (lamp); juce::DropShadow (ok.withAlpha (0.6f), 5, {}).drawForPath (g, lp); g.setColour (ok); g.fillEllipse (lamp); }
+            if (on) { juce::Path lp; lp.addEllipse (lamp); juce::DropShadow (ok.withAlpha (0.6f), 5, {}).drawForPath (g, lp); g.setColour (ok); g.fillEllipse (lamp); }
             else { g.setColour (col); g.drawEllipse (lamp.reduced (0.5f), 1.4f); }
             x += 11.0f;
             const float w = (float) juce::GlyphArrangement::getStringWidthInt (f, label) + 2.0f;
-            g.setColour (p.status == 0 ? ok.brighter (0.25f) : col);
+            g.setColour (on ? ok.brighter (0.25f) : col);
             g.drawText (label, juce::Rectangle<float> (x, line.getY(), w, line.getHeight()).toNearestInt(), juce::Justification::centredLeft, false);
             x += w;
             if (k + 1 < row.plugs.size())
@@ -549,6 +550,17 @@ void ChainView::rebuildTracks (const std::vector<mst::ChainPlan::TrackAdd>& adds
         if (! have) row.plugs.push_back ({ a.kind, mst::plugDisplayName (a.kind), 1, plugOrder (a.kind) });
         row.tip << (row.tip.isEmpty() ? "" : "\n") << "ADD " << mst::plugDisplayName (a.kind) << ": " << a.why;
     }
+    // every track with a helper needs The Servant too (it's what tells The Master the track's role and sound)
+    int servants = 0;
+    for (auto& r : rows)
+    {
+        bool hasServant = false;
+        for (auto& p : r.plugs) if (p.kind == "servant") hasServant = true;
+        if (hasServant) { ++servants; continue; }
+        if (r.track == "Guitar and bass tracks") continue;
+        r.plugs.push_back ({ "servant", "The Servant", 1, plugOrder ("servant") });
+        r.tip << (r.tip.isEmpty() ? "" : "\n") << "ADD The Servant: set its ROLE, so The Master knows what this track is and can balance it.";
+    }
     for (auto& r : rows)
         std::stable_sort (r.plugs.begin(), r.plugs.end(), [] (const TrackChainList::Plug& a, const TrackChainList::Plug& b) { return a.order < b.order; });
     // tracks that need something added come first
@@ -557,6 +569,11 @@ void ChainView::rebuildTracks (const std::vector<mst::ChainPlan::TrackAdd>& adds
         auto needs = [] (const TrackChainList::Row& r) { for (auto& p : r.plugs) if (p.status == 1 || p.status == 3) return true; return false; };
         return needs (a) && ! needs (b);
     });
+    // the standing instruction, last: The Servant on every track you want balanced
+    rows.push_back ({ servants == 0 ? juce::String ("Your tracks") : juce::String ("Any other track"), "set its ROLE",
+                      "Put The Servant on every track you want balanced and set its ROLE (Lead, Rhythm, Bass, Kick...). "
+                      "Then press RESET on The Master and play the song, so each one hears its track.",
+                      { { "servant", "The Servant", servants == 0 && stage >= 1 ? 1 : 4, 2 } } });
     const int y = tracksView.getViewPositionY();
     trackList.setRows (std::move (rows), tracksView.getWidth() - 10);
     tracksView.setVisible (! trackList.empty());
@@ -1267,11 +1284,25 @@ MasterEditor::MasterEditor (MasterProcessor& p) : AudioProcessorEditor (&p), pro
     };
     addChildComponent (builtInButton);
     nextButton.setName ("autofix");   // the hot, glowing style: the way forward
-    nextButton.setTooltip ("Go to the fix: The Master prescribes your Castle Danger plugins and sets them for you.");
-    nextButton.onClick = [this] { if (! proc.isPluginMode()) proc.setPluginMode (true); setPage (1); refreshNow(); };
+    nextButton.setTooltip ("Go to the fix: The Master prescribes your Castle Danger plugins right away, then sets them for you.");
+    nextButton.onClick = [this]
+    {
+        setPage (1);
+        if (proc.getChainStage() == 0 && ! proc.isWaitingForServants())
+        {
+            juce::Component::SafePointer<MasterEditor> safe (this);
+            proc.requestPrescribe ([safe] (const juce::String&)   // not heard enough yet: the steps say what to do
+            {
+                if (safe == nullptr) return;
+                safe->lastSnap = -1; safe->lastChainSig = -1; safe->updateVisibility();
+            });
+        }
+        refreshNow();
+    };
     addChildComponent (nextButton);
     stepList.setInterceptsMouseClicks (false, false);
-    newRxButton.setTooltip ("Start over: make a new prescription from the analysis (take the plugins off the bus, or bypass them, and play the song first).");
+    newRxButton.setTooltip ("Start over after big changes to the mix: bypass the bus plugins, press RESET and play the song, then press this. "
+                            "(For plugins you've added or removed, the main button says UPDATE: no need to start over.)");
     newRxButton.onClick = [this]
     {
         juce::Component::SafePointer<MasterEditor> safe (this);
@@ -1357,22 +1388,34 @@ void MasterEditor::setPage (int pg)
 
 void MasterEditor::updateVisibility()
 {
-    const bool chainMode = proc.isPluginMode();
+    if (! proc.isPluginMode()) proc.setPluginMode (true);   // built-in fixes are retired: the plugins do the work
+    const bool chainMode = true;
     for (auto* c : analyzeComps) c->setVisible (page == 0);
     for (auto* c : fixComps) c->setVisible (page == 1 && ! chainMode);
     for (auto* c : chainComps) c->setVisible (page == 1 && chainMode);
     reportSel.setVisible (page == 0);
     nextButton.setVisible (page == 0);
     fixInfo.pluginMode = chainMode;
-    builtInButton.setVisible (page == 1);
-    builtInButton.setButtonText (chainMode ? "OR USE BUILT-IN FIXES" : "<  BACK TO MY PLUGINS");
-    pageTabs.setLabels ({ "ANALYZE", chainMode ? "FIX IT WITH MY PLUGINS" : "FIX IT: BUILT-IN FIXES" });
+    builtInButton.setVisible (false);
+    pageTabs.setLabels ({ "ANALYZE", "FIX IT WITH MY PLUGINS" });
     autoFixButton.setVisible (page == 1);
     outSel->setVisible (page == 1);
     outLabel.setVisible (page == 1);
     fixInfo.setVisible (page == 1);
     newRxButton.setVisible (page == 1 && chainMode && proc.getChainStage() >= 1);
-    autoFixButton.setButtonText (! chainMode ? "AUTO FIX" : (proc.getChainStage() == 0 ? "PRESCRIBE" : proc.getChainStage() == 1 ? "APPLY" : "REFINE"));
+    autoFixButton.setButtonText (chainButtonText());
+    lastOutdated = proc.chainOutdated();
+    autoFixButton.setTooltip (lastOutdated ? "You've added or removed plugins on your tracks since the prescription. UPDATE plans them in from the same analysis"
+                                             + juce::String (proc.getChainStage() >= 2 ? " and sends the new settings." : ".")
+                                           : juce::String ("Does the next step: PRESCRIBE, then APPLY, then REFINE."));
+}
+
+juce::String MasterEditor::chainButtonText() const
+{
+    const int st = proc.getChainStage();
+    if (st == 0) return "PRESCRIBE";
+    if (proc.chainOutdated()) return "UPDATE";
+    return st == 1 ? "APPLY" : "REFINE";
 }
 
 void MasterEditor::runChainButton()
@@ -1388,6 +1431,19 @@ void MasterEditor::runChainButton()
             if (safe == nullptr) return;
             if (e.isNotEmpty()) safe->showMessage ("NOT YET", e);
             safe->lastSnap = -1; safe->lastChainSig = -1;
+        });
+        return;
+    }
+    if (proc.chainOutdated())
+    {
+        if (proc.isWaitingForServants()) return;
+        juce::Component::SafePointer<MasterEditor> safe (this);
+        proc.requestUpdate ([safe, stage] (const juce::String& e)
+        {
+            if (safe == nullptr) return;
+            if (e.isNotEmpty()) safe->showMessage ("NOT YET", e);
+            else if (stage >= 2) { safe->reportAfter = true; safe->reportSel.setIndex (1); }
+            safe->lastSnap = -1; safe->lastChainSig = -1; safe->updateVisibility();
         });
         return;
     }
@@ -1674,6 +1730,7 @@ void MasterEditor::timerCallback()
             for (auto& l : cp.onTracks)   // per-track plugins now live in YOUR TRACKS; keep only general notes here
                 if (! (l.startsWith ("BUZZKILL") || l.startsWith ("FLATLINER") || l.startsWith ("LOW BLOW") || l.startsWith ("THE SERVANT")))
                     chainView.onTracks.add (l);
+            chainView.stage = proc.getChainStage();
             chainView.rebuildTracks (proc.getChainStage() >= 1 ? cp.adds : std::vector<mst::ChainPlan::TrackAdd>());
             chainView.orderKnown = proc.chainOrderKnown();
             chainView.stage = proc.getChainStage();
@@ -1703,6 +1760,9 @@ void MasterEditor::timerCallback()
             d.add (stage >= 2 ? "Play it through, then REFINE." : "Fine-tune from what came out.");
             stepList.details = d;
             stepList.current = stage == 0 ? (heard.seconds >= 20.0 ? 1 : 0) : stage == 1 ? (allLinked ? 3 : 2) : 4;
+            const bool outdated = proc.chainOutdated();
+            if (outdated) { d.set (2, "Track plugins added or removed: press UPDATE."); stepList.details = d; stepList.current = 2; }
+            if (outdated != lastOutdated || autoFixButton.getButtonText() != chainButtonText()) updateVisibility();
             stepList.repaint();
             updateVisibility();
         }

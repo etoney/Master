@@ -92,7 +92,7 @@ inline TrackPlan planFlatliner (const HelperInfo& h, const GenreProfile& g)
     const double secs = h.extra.getProperty ("seconds", 0.0);
     if (secs < 5.0)
     {
-        p.why.add ("Flatliner has only heard " + juce::String (secs, 1) + " s of this track. Play the song (RESET on The Master first), then PRESCRIBE again.");
+        p.why.add ("Flatliner has only heard " + juce::String (secs, 1) + " s of this track. Play the song again, then press UPDATE.");
         p.note = "NOT ENOUGH HEARD YET";
         return p;
     }

@@ -125,10 +125,15 @@ public:
     std::vector<Peer> getPeers() const;
     std::vector<StepStatus> chainStatus() const;   // the prescription vs what's actually on the bus
     bool chainOrderKnown() const;                  // enough audio has played to check the order
-    juce::String prescribe();                      // freezes the analysis, makes the prescription
+    juce::String prescribe (bool fromFrozen = false);   // freezes the analysis, makes the prescription
+                                                   // (fromFrozen: re-plan from the analysis the last one was made from)
+    // track plugins linked or gone since the prescription: the main button becomes UPDATE
+    bool chainOutdated() const;
+    // UPDATE: re-plan the tracks and bus from the same analysis (no need to play again), re-apply if it was applied
+    void requestUpdate (std::function<void (const juce::String&)> done);
     // PRESCRIBE as the button does it: the Servants that are listening finish first (each decides
     // its own resonances and clean-up), then The Master prescribes. 'done' gets prescribe()'s answer.
-    void requestPrescribe (std::function<void (const juce::String&)> done);
+    void requestPrescribe (std::function<void (const juce::String&)> done, bool fromFrozen = false);
     bool isWaitingForServants() const { return pendingPrescribe != nullptr; }
     juce::String applyChain();                     // sends the settings (needs every prescribed plugin linked)
     juce::String refineChain();                    // after a play-through: fine-tune from what came out
