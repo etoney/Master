@@ -589,6 +589,41 @@ int main (int argc, char** argv)
         check (std::abs (fv.swing[6] - harsh.swing[6]) < 0.01f, "swing measurements survive save/load");
     }
 
+    // ---------------- Low Blow: kick/bass clash from the Servants
+    {
+        auto byId = [&] (const char* id) -> const mst::GenreProfile& { for (auto& g : factory.genres) if (g.id == id) return g; return factory.genres[0]; };
+        auto tr = [] (const char* name, const char* role, std::initializer_list<double> bands)
+        {
+            mst::TrackInfo t; t.id = name; t.name = name; t.role = role; t.seconds = 30;
+            int b = 0; for (auto v : bands) t.bandPow[(size_t) b++] = v;
+            return t;
+        };
+        std::vector<mst::TrackInfo> fight { tr ("Kick", "Kick", { 0.010, 0.020, 0.004, 0.001, 0, 0, 0.0005, 0.001, 0, 0 }),
+                                            tr ("Bass DI", "Bass", { 0.006, 0.018, 0.010, 0.003, 0.001, 0, 0, 0, 0, 0 }),
+                                            tr ("Rhythm Gtr", "Rhythm", { 0, 0.001, 0.02, 0.05, 0.04, 0.02, 0.01, 0, 0, 0 }) };
+        std::vector<mst::TrackInfo> apart { tr ("Kick", "Kick", { 0.030, 0.002, 0.0002, 0, 0, 0, 0.001, 0, 0, 0 }),
+                                            tr ("Bass", "Bass", { 0.0001, 0.0005, 0.02, 0.01, 0.002, 0, 0, 0, 0, 0 }) };
+        const auto c1 = mst::findLowClash (fight), c2 = mst::findLowClash (apart), c0 = mst::findLowClash ({ fight[2] });
+        check (c1.measured && c1.found && c1.band == 1 && c1.kickBand == 1 && c1.gapDb < 1.0f && c1.bassName == "Bass DI",
+               "kick and bass both in 60-120 Hz: clash found (" + juce::String (c1.gapDb, 1) + " dB apart)");
+        check (c2.measured && ! c2.found && c2.kickBand == 0, "sub kick + mid-bass: no clash");
+        check (! c0.measured, "no Kick and Bass Servants: nothing measured");
+
+        auto ex = [] (std::initializer_list<std::pair<const char*, juce::var>> kv) { auto* o = new juce::DynamicObject(); for (auto& [k, v] : kv) o->setProperty (k, v); return juce::var (o); };
+        mst::HelperInfo lb { "lb1", "lowblow", "Bass DI", "Bass", ex ({ { "sidechain", true }, { "gapMs", 250.0 }, { "hitsPerMin", 240.0 } }) };
+        const auto pm = mst::planLowBlow (lb, c1, byId ("metal")), pr = mst::planLowBlow (lb, c1, byId ("rock"));
+        check (pm.params.at ("depth") == 7.0f && pr.params.at ("depth") == 5.0f && pm.params.at ("crossover") == 140.0f && pm.params.at ("mode") == 0.0f,
+               juce::String::formatted ("Low Blow DEPTH from the genre + a near-even fight (metal %.0f, rock %.0f dB), CROSSOVER %.0f Hz above the kick's thump",
+                                        pm.params.at ("depth"), pr.params.at ("depth"), pm.params.at ("crossover")));
+        check (std::abs (pm.params.at ("release") - 75.0f) < 0.5f && pm.why.joinIntoString (" ").contains ("250 ms"), "RELEASE from the gap between kicks (250 ms apart -> 75 ms)");
+        const auto pa = mst::planLowBlow (lb, c2, byId ("rock"));
+        check (pa.params.at ("depth") == 2.0f && pa.params.at ("crossover") == 90.0f, "barely overlapping: lighter DEPTH, crossover 90 Hz for a sub kick");
+        mst::HelperInfo noSide = lb; noSide.extra = ex ({ { "sidechain", false } });
+        const auto pn = mst::planLowBlow (noSide, c1, byId ("rock"));
+        check (pn.note.contains ("NO KICK ON SIDECHAIN") && pn.why.joinIntoString (" ").contains ("sidechain"), "no kick on the sidechain: says how to route it");
+        check (mst::plugDisplayName ("lowblow") == "Low Blow" && MasterProcessor::isTrackKind ("lowblow"), "Low Blow counts as a track plugin");
+    }
+
     // ---------------- BuzzKill and Flatliner on the tracks
     {
         auto byId = [&] (const char* id) -> const mst::GenreProfile& { for (auto& g : factory.genres) if (g.id == id) return g; return factory.genres[0]; };

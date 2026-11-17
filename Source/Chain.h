@@ -163,6 +163,7 @@ inline juce::String plugDisplayName (const juce::String& kind)
     if (kind == "servant") return "The Servant";
     if (kind == "buzzkill") return "BuzzKill";
     if (kind == "flatliner") return "Flatliner";
+    if (kind == "lowblow") return "Low Blow";
     if (kind == "master") return "The Master";
     return kind;
 }

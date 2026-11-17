@@ -136,4 +136,104 @@ inline TrackPlan planFlatliner (const HelperInfo& h, const GenreProfile& g)
     p.note = "RANGE " + juce::String (range, 0) + " dB  //  TARGET " + juce::String (target, 1) + " dB  //  SWING WAS " + juce::String (swing, 0) + " dB";
     return p;
 }
+//------------------------------------------------------------------------------
+// LOW BLOW: ducks the bass under each kick (the kick comes in on its sidechain).
+// The clash comes from the Kick and Bass Servants: how close their levels are in the same low bands.
+struct LowClash
+{
+    bool measured = false, found = false;
+    int band = 1;                 // the low band where they fight most (0 SUB, 1 BASS, 2 LOW)
+    int kickBand = 1;             // where the kick's thump sits
+    float gapDb = 99.0f;          // level difference between kick and bass in that band (small = they fight)
+    juce::String kickName, bassName;
+};
+
+inline LowClash findLowClash (const std::vector<TrackInfo>& tracks)
+{
+    LowClash c;
+    const TrackInfo *kick = nullptr, *bass = nullptr;
+    for (auto& t : tracks)
+    {
+        if (kick == nullptr && roleIs (t.role, { "Kick" })) kick = &t;
+        if (bass == nullptr && roleIs (t.role, { "Bass" })) bass = &t;
+    }
+    if (kick == nullptr) for (auto& t : tracks) if (roleIs (t.role, { "Drums" })) { kick = &t; break; }
+    if (kick == nullptr || bass == nullptr) return c;
+    c.measured = true;
+    c.kickName = kick->name.isNotEmpty() ? kick->name : juce::String ("the kick");
+    c.bassName = bass->name.isNotEmpty() ? bass->name : juce::String ("the bass");
+    auto db = [] (double p) { return (float) (10.0 * std::log10 (std::max (1e-14, p))); };
+    float kMax = -200, bMax = -200;
+    for (int b = 0; b < 3; ++b)
+    {
+        kMax = std::max (kMax, db (kick->bandPow[(size_t) b]));
+        bMax = std::max (bMax, db (bass->bandPow[(size_t) b]));
+        if (db (kick->bandPow[(size_t) b]) >= kMax) c.kickBand = b;
+    }
+    for (int b = 0; b < 3; ++b)
+    {
+        const float k = db (kick->bandPow[(size_t) b]), s = db (bass->bandPow[(size_t) b]);
+        if (k < kMax - 10.0f || s < bMax - 10.0f) continue;          // only bands that matter to both
+        const float gap = std::abs (k - s);
+        if (gap < c.gapDb) { c.gapDb = gap; c.band = b; }
+    }
+    c.found = c.gapDb <= 10.0f;
+    return c;
+}
+
+inline TrackPlan planLowBlow (const HelperInfo& h, const LowClash& clash, const GenreProfile& g)
+{
+    auto p = makeHelperPlan (h, "Bass track");
+    const auto G = genreKey (g);
+    float depth = 5.0f, release = 90.0f, hold = 15.0f;
+    if (G == "metal")         { depth = 6.0f; release = 50.0f; hold = 5.0f; }
+    else if (G == "punk")     { depth = 5.0f; release = 60.0f; hold = 10.0f; }
+    else if (G == "hardrock") { depth = 5.0f; release = 70.0f; }
+    else if (G == "rock")     { depth = 4.0f; release = 90.0f; }
+    else if (G == "pop")      { depth = 6.0f; release = 120.0f; hold = 20.0f; }
+    juce::String depthWhy = juce::String (depth, 0) + " dB is typical for " + g.name;
+    if (clash.measured)
+    {
+        if (clash.found && clash.gapDb < 3.0f) { depth += 1.0f; depthWhy << ", one more because " << clash.kickName << " and " << clash.bassName << " are almost exactly as loud in the same range"; }
+        else if (! clash.found)                { depth = std::max (2.0f, depth - 2.0f); depthWhy << ", but they hardly overlap here, so a lighter touch"; }
+    }
+
+    // crossover: just above where the kick's thump sits
+    float xo = 120.0f;
+    juce::String xoWhy = "the usual split between the kick's thump and the bass's growl";
+    if (clash.measured)
+    {
+        static const float xos[] = { 90.0f, 140.0f, 160.0f };
+        static const char* where[] = { "in the sub (20-60 Hz)", "around 60-120 Hz", "around 120-250 Hz" };
+        xo = xos[clash.kickBand];
+        xoWhy = clash.kickName + "'s thump sits " + where[clash.kickBand] + ", so only the bass below " + juce::String (juce::roundToInt (xo)) + " Hz makes way; its growl stays";
+    }
+
+    // release: back before the next hit
+    const double gap = h.extra.getProperty ("gapMs", 0.0);
+    juce::String relWhy = "a natural recovery for " + g.name;
+    if (gap >= 80.0)
+    {
+        release = juce::jlimit (30.0f, 200.0f, std::round ((float) gap * 0.3f));
+        relWhy = "your kicks land about every " + juce::String (juce::roundToInt ((float) gap)) + " ms, so the bass is fully back well before the next one";
+    }
+
+    p.params["depth"] = depth; p.params["attack"] = 1.0f; p.params["hold"] = hold; p.params["release"] = release;
+    p.params["sensitivity"] = 60.0f; p.params["mode"] = 0.0f; p.params["crossover"] = xo; p.params["lookahead"] = 1.0f; p.params["listen"] = 0.0f;
+
+    if (clash.measured && clash.found)
+        p.why.add (clash.kickName + " and " + clash.bassName + " fight " + juce::String (bandDefs()[(size_t) clash.band].label) + " ("
+                   + bandDefs()[(size_t) clash.band].range + " Hz): their levels there are only " + juce::String (clash.gapDb, 1) + " dB apart.");
+    else if (! clash.measured)
+        p.why.add ("No Servant with ROLE Kick (or Drums) and Bass, so The Master can't measure the clash: genre settings. Put The Servant on both for a closer fit.");
+    p.why.add ("DEPTH -" + juce::String (depth, 0) + " dB: " + depthWhy + ".");
+    p.why.add ("CROSSOVER " + juce::String (juce::roundToInt (xo)) + " Hz (LOWS ONLY): " + xoWhy + ".");
+    p.why.add ("RELEASE " + juce::String (juce::roundToInt (release)) + " ms, HOLD " + juce::String (juce::roundToInt (hold)) + " ms: " + relWhy + ".");
+    const bool side = (bool) h.extra.getProperty ("sidechain", false);
+    if (! side)
+        p.why.add ("Low Blow hears no kick on its sidechain yet. Send the kick track to Low Blow's sidechain input (in Studio Pro: the sidechain button in Low Blow's window). Until then it leaves the bass alone.");
+    p.note = "DEPTH -" + juce::String (depth, 0) + " dB  //  " + juce::String (juce::roundToInt (xo)) + " Hz  //  REL " + juce::String (juce::roundToInt (release)) + " ms"
+           + (side ? juce::String() : juce::String ("  //  NO KICK ON SIDECHAIN"));
+    return p;
+}
 } // namespace mst

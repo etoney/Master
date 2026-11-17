@@ -173,7 +173,7 @@ FIX IT WITH MY PLUGINS  (the main way: The Master sets your plugins for you)
 
   Needs Dominatrix 1.2+, Chop Shop 1.1+, The Freak 1.0+ and, for tracks,
   The Servant 0.5+,
-  BuzzKill 2.1+ and Flatliner 1.1+.
+  BuzzKill 2.1+, Flatliner 1.1+ and Low Blow 1.0+.
 
   OUTPUT (top of THE CURE, both FIX IT pages)
     -6 dB  (default) a pre-master for a separate mastering step: peaks are
@@ -249,7 +249,7 @@ FIX IT WITH MY PLUGINS  (the main way: The Master sets your plugins for you)
   button waits for them), then The Master plans the tone, level and comp.
   So: press RESET, play the whole song, then PRESCRIBE.
 
-  BUZZKILL AND FLATLINER ON YOUR TRACKS
+  BUZZKILL, FLATLINER AND LOW BLOW ON YOUR TRACKS
   They link by themselves too, and The Master works out which track each
   one is on (by track name, or by matching it to that track's Servant).
   They show under YOUR TRACKS with their name in yellow.
@@ -261,9 +261,17 @@ FIX IT WITH MY PLUGINS  (the main way: The Master sets your plugins for you)
                change the balance), RANGE from how much the lead swings and
                the genre, SPEED and GATE. A lead Flatliner rides doesn't
                also get The Servant's compressor for its jumps.
+    LOW BLOW   on the bass, with the kick on its sidechain. From the Kick
+               and Bass Servants The Master finds where they fight and how
+               evenly: DEPTH from the genre and the fight, CROSSOVER just
+               above the kick's thump (LOWS ONLY, so the bass's growl stays),
+               RELEASE from the gap between kick hits so the bass is back
+               before the next one. It tells you if no kick is arriving on
+               the sidechain.
   If they're not there, the prescription asks for them when the mix needs
   them: BuzzKill when there's hum, Flatliner when the lead swings more than
-  about 10 dB.
+  about 10 dB, Low Blow when kick and bass are within 10 dB of each other in
+  the same low band.
 
 
 -------------------------------------------------------------------------------

@@ -661,7 +661,7 @@ juce::String MasterProcessor::prescribe()
     std::set<juce::String> ridden;
     for (auto& [id, p] : peers)
     {
-        if (p.kind != "buzzkill" && p.kind != "flatliner") continue;
+        if (p.kind != "buzzkill" && p.kind != "flatliner" && p.kind != "lowblow") continue;
         mst::HelperInfo h;
         h.id = id; h.kind = p.kind; h.extra = p.extra;
         h.track = p.extra.getProperty ("track", "").toString();
@@ -673,7 +673,7 @@ juce::String MasterProcessor::prescribe()
             if (h.track.isEmpty()) h.track = sp.extra.getProperty ("track", "").toString();
             if (p.kind == "flatliner") ridden.insert (sv);
         }
-        else h.role = p.kind == "flatliner" ? "Lead" : "Rhythm";
+        else h.role = p.kind == "flatliner" ? "Lead" : (p.kind == "lowblow" ? "Bass" : "Rhythm");
         helpers.push_back (h);
     }
 
@@ -695,10 +695,12 @@ juce::String MasterProcessor::prescribe()
     }
 
     const auto& G = genres[(size_t) target.index];
-    bool anyBuzz = false, anyFlat = false;
+    bool anyBuzz = false, anyFlat = false, anyLowBlow = false;
+    const auto clash = mst::findLowClash (tracks);
     for (auto& h : helpers)
     {
-        if (h.kind == "buzzkill") { chainPlan.tracks.push_back (mst::planBuzzKill (h, in, G)); anyBuzz = true; }
+        if (h.kind == "lowblow") { chainPlan.tracks.push_back (mst::planLowBlow (h, clash, G)); anyLowBlow = true; }
+        else if (h.kind == "buzzkill") { chainPlan.tracks.push_back (mst::planBuzzKill (h, in, G)); anyBuzz = true; }
         else                      { chainPlan.tracks.push_back (mst::planFlatliner (h, G)); anyFlat = true; }
     }
     // the advice for the tracks: what's linked now does the job; ask for what's missing
@@ -707,6 +709,10 @@ juce::String MasterProcessor::prescribe()
         if (anyBuzz && chainPlan.onTracks[i].startsWith ("BUZZKILL")) chainPlan.onTracks.remove (i);
         else if (anyFlat && chainPlan.onTracks[i].startsWith ("FLATLINER")) chainPlan.onTracks.remove (i);
     }
+    if (! anyLowBlow && clash.found)
+        chainPlan.onTracks.add ("LOW BLOW on " + clash.bassName + ": it and " + clash.kickName + " fight "
+                                + juce::String (mst::bandDefs()[(size_t) clash.band].label) + " (" + mst::bandDefs()[(size_t) clash.band].range
+                                + " Hz), " + juce::String (clash.gapDb, 1) + " dB apart. Low Blow ducks the bass under each kick; send the kick to its sidechain, then PRESCRIBE again.");
     if (! anyFlat)
     {
         // a lead that jumps around: from its Servant's fingerprint

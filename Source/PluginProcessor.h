@@ -118,7 +118,7 @@ public:
     struct LogEntry { juce::String plugin, title, detail; bool confirmed = false; juce::String peerId; };
     struct TrackStatus { juce::String peerId, kind { "servant" }, name, role, summary; float share = -1; bool linked = false, planned = false; };
     std::vector<TrackStatus> trackStatus() const;   // linked Servants, BuzzKills and Flatliners + what the prescription does to each
-    static bool isTrackKind (const juce::String& k) { return k == "servant" || k == "buzzkill" || k == "flatliner"; }
+    static bool isTrackKind (const juce::String& k) { return k == "servant" || k == "buzzkill" || k == "flatliner" || k == "lowblow"; }
 
     bool isPluginMode() const { return pluginMode; }
     void setPluginMode (bool b) { pluginMode = b; }
