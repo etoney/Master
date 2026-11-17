@@ -1177,6 +1177,32 @@ int main (int argc, char** argv)
         check (writePng (ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f), dir.getChildFile ("gui_live_fix.png")), "FIX IT page with live meters");
     }
 
+    // ---- YOUR TRACKS: one row per track, its plugins in order, missing ones marked, and it scrolls
+    {
+        ChainView cv;
+        cv.setBounds (0, 0, 772, 198);
+        cv.hasPlan = true; cv.stage = 1;
+        auto tr = [&] (const char* kind, const char* name, const char* role, bool linked = true)
+        { MasterProcessor::TrackStatus t; t.kind = kind; t.name = name; t.role = role; t.linked = linked; t.planned = true; t.summary = "EQ 3 bands"; cv.tracks.push_back (t); };
+        tr ("servant", "Lead Vox", "Lead"); tr ("servant", "Rhythm Gtr L", "Rhythm"); tr ("servant", "Rhythm Gtr R", "Rhythm");
+        tr ("servant", "Bass", "Bass"); tr ("servant", "Kick", "Kick"); tr ("servant", "Snare", "Snare"); tr ("servant", "Overheads", "Drums");
+        tr ("servant", "Keys", "Keys / Pads"); tr ("buzzkill", "Rhythm Gtr L", "BUZZKILL"); tr ("buzzkill", "Bass", "BUZZKILL");
+        std::vector<mst::ChainPlan::TrackAdd> adds { { "flatliner", "Lead Vox", "Its level swings 14 dB." }, { "lowblow", "Bass", "It and Kick fight in BASS." } };
+        cv.rebuildTracks (adds);
+        auto* vp = dynamic_cast<juce::Viewport*> (cv.getChildComponent (0));
+        auto* list = vp != nullptr ? vp->getViewedComponent() : nullptr;
+        check (vp != nullptr && vp->isVisible() && list != nullptr && list->getHeight() > vp->getHeight(),
+               "YOUR TRACKS: 8 tracks don't fit, so the list scrolls (no '+ more, see the log')");
+        check (list != nullptr && list->getHeight() == 8 * TrackChainList::rowH, "YOUR TRACKS: one row per track (BuzzKill and Servant on the same track share a row)");
+        juce::Image img (juce::Image::ARGB, 772 * 2, 198 * 2, true);
+        { juce::Graphics g (img); g.addTransform (juce::AffineTransform::scale (2.0f)); g.fillAll (juce::Colour (0xff1d1815)); cv.paintEntireComponent (g, true); }
+        check (writePng (img, dir.getChildFile ("your_tracks_scroll.png")), "YOUR TRACKS snapshot");
+        vp->setViewPosition (0, 1000);
+        juce::Image img2 (juce::Image::ARGB, 772 * 2, 198 * 2, true);
+        { juce::Graphics g (img2); g.addTransform (juce::AffineTransform::scale (2.0f)); g.fillAll (juce::Colour (0xff1d1815)); cv.paintEntireComponent (g, true); }
+        writePng (img2, dir.getChildFile ("your_tracks_scrolled.png"));
+    }
+
     std::printf ("\n%d failure(s)\n", failures);
     return failures == 0 ? 0 : 1;
 }

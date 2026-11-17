@@ -33,6 +33,14 @@ struct ChainPlan
     bool headroom = false;                    // made for -6 dB output (headroom for a separate mastering step)
     FixParams masterFix;                      // its built-in settings in this mode (EQ + safety limiter only)
     juce::StringArray onTracks;               // advice for individual tracks (BuzzKill, Flatliner...)
+    // track plugins The Master asks you to add: kind ("buzzkill", "flatliner", "lowblow"), the track
+    // ("" = every guitar and bass track) and the reason (shown as the row's tooltip)
+    struct TrackAdd { juce::String kind, track, why; };
+    std::vector<TrackAdd> adds;
+    void removeAdds (const juce::String& kind)
+    {
+        adds.erase (std::remove_if (adds.begin(), adds.end(), [&] (const TrackAdd& a) { return a.kind == kind; }), adds.end());
+    }
     juce::StringArray cantFix;
     Features before;                          // what the plan was made from
     std::vector<TrackPlan> tracks;            // The Servant on each linked track, then BuzzKill / Flatliner
@@ -76,6 +84,11 @@ struct ChainPlan
         FixPlan fp; fp.p = masterFix;
         o->setProperty ("masterFix", fp.toVar());
         o->setProperty ("onTracks", onTracks.joinIntoString ("\n"));
+        {
+            juce::Array<juce::var> ad;
+            for (auto& a : adds) { auto* ao = new juce::DynamicObject(); ao->setProperty ("kind", a.kind); ao->setProperty ("track", a.track); ao->setProperty ("why", a.why); ad.add (juce::var (ao)); }
+            o->setProperty ("adds", ad);
+        }
         o->setProperty ("cantFix", cantFix.joinIntoString ("\n"));
         o->setProperty ("before", before.toVar());
         juce::Array<juce::var> tr;
@@ -135,6 +148,9 @@ struct ChainPlan
         c.headroom = v.getProperty ("headroom", false);
         c.masterFix = FixPlan::fromVar (v.getProperty ("masterFix", {})).p;
         c.onTracks = juce::StringArray::fromLines (v.getProperty ("onTracks", "").toString()); c.onTracks.removeEmptyStrings();
+        if (auto* ad = v.getProperty ("adds", {}).getArray())
+            for (auto& a : *ad)
+                c.adds.push_back ({ a.getProperty ("kind", "").toString(), a.getProperty ("track", "").toString(), a.getProperty ("why", "").toString() });
         c.cantFix = juce::StringArray::fromLines (v.getProperty ("cantFix", "").toString()); c.cantFix.removeEmptyStrings();
         c.before = Features::fromVar (v.getProperty ("before", {}));
         if (auto* tr = v.getProperty ("tracks", {}).getArray())
@@ -327,7 +343,10 @@ inline ChainPlan planChain (const Features& in, const GenreProfile& g, bool head
 
     // ---- advice for individual tracks
     if (in.humSeconds >= 1.0f)
+    {
         c.onTracks.add ("BUZZKILL on the guitar and bass tracks: " + juce::String (in.humHz) + " Hz hum in the quiet parts. Fix it at the source, not on the master.");
+        c.adds.push_back ({ "buzzkill", "", juce::String (in.humHz) + " Hz hum in the quiet parts: put BuzzKill first on each guitar and bass track (right after the amp sim)." });
+    }
     if (zLra > 1.5f)
         c.onTracks.add ("FLATLINER on the lead vocal if it's the part jumping in level.");
     c.onTracks.add ("THE SERVANT on your tracks: set each one's ROLE, and The Master shares the tone, compression and level fixes out to the tracks that cause them.");

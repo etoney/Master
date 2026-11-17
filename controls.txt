@@ -249,9 +249,12 @@ FIX IT WITH MY PLUGINS  (the main way: The Master sets your plugins for you)
            out (usually the lead vocal; never drums or bass), stronger for
            pop and when the mix's bite (4-8 kHz) is already hot.
   All of it comes from the genre's MIX profile: no instrument profiles and
-  no stem splitting. The tracks appear under YOUR TRACKS with their share
-  of the mix; APPLY sets them along with the master bus, and every change
-  is listed with its reason. Whatever the tracks can't fix, The Master's own
+  no stem splitting. YOUR TRACKS lists each track once, with the plugins
+  to put on it in order (e.g. 1 BUZZKILL > 2 THE SERVANT). A green lamp
+  means that plugin is linked to The Master; a red ring means add it
+  (hover a track for the reason). The list scrolls when you have more
+  tracks than fit. APPLY sets them along with the master bus, and every
+  change is listed with its reason in WHAT I CHANGED & WHY. Whatever the tracks can't fix, The Master's own
   TONE MATCH EQ does, followed by a -1 dBTP safety limiter.
   The Servants are run from here: RESET on The Master starts every Servant
   listening, and PRESCRIBE first has each one finish and decide its own
@@ -262,7 +265,9 @@ FIX IT WITH MY PLUGINS  (the main way: The Master sets your plugins for you)
   BUZZKILL, FLATLINER AND LOW BLOW ON YOUR TRACKS
   They link by themselves too, and The Master works out which track each
   one is on (by track name, or by matching it to that track's Servant).
-  They show under YOUR TRACKS with their name in yellow.
+  They show under YOUR TRACKS in the row of the track they're on, in the
+  order they go: BuzzKill (right after the amp sim), Flatliner, The
+  Servant, then Low Blow.
     BUZZKILL   RELEASE for the genre and the part (tight for metal and punk
                rhythm, natural for pop, gentler on leads and bass, a bit
                tighter on a noisy track); HEAR REMOVED off. The mix's hum

@@ -711,13 +711,18 @@ juce::String MasterProcessor::prescribe()
     // the advice for the tracks: what's linked now does the job; ask for what's missing
     for (int i = chainPlan.onTracks.size(); --i >= 0;)
     {
-        if (anyBuzz && chainPlan.onTracks[i].startsWith ("BUZZKILL")) chainPlan.onTracks.remove (i);
+        if (anyBuzz && chainPlan.onTracks[i].startsWith ("BUZZKILL")) { chainPlan.onTracks.remove (i); chainPlan.removeAdds ("buzzkill"); }
         else if (anyFlat && chainPlan.onTracks[i].startsWith ("FLATLINER")) chainPlan.onTracks.remove (i);
     }
+    if (anyBuzz) chainPlan.removeAdds ("buzzkill");
     if (! anyLowBlow && clash.found)
+    {
+        chainPlan.adds.push_back ({ "lowblow", clash.bassName, "It and " + clash.kickName + " fight in " + juce::String (mst::bandDefs()[(size_t) clash.band].label)
+                                    + " (" + mst::bandDefs()[(size_t) clash.band].range + " Hz). Send the kick to Low Blow's sidechain, then PRESCRIBE again." });
         chainPlan.onTracks.add ("LOW BLOW on " + clash.bassName + ": it and " + clash.kickName + " fight "
                                 + juce::String (mst::bandDefs()[(size_t) clash.band].label) + " (" + mst::bandDefs()[(size_t) clash.band].range
                                 + " Hz), " + juce::String (clash.gapDb, 1) + " dB apart. Low Blow ducks the bass under each kick; send the kick to its sidechain, then PRESCRIBE again.");
+    }
     if (! anyFlat)
     {
         // a lead that jumps around: from its Servant's fingerprint
@@ -728,6 +733,8 @@ juce::String MasterProcessor::prescribe()
             if (swing > 10.0f)
             {
                 for (int k = chainPlan.onTracks.size(); --k >= 0;) if (chainPlan.onTracks[k].startsWith ("FLATLINER")) chainPlan.onTracks.remove (k);
+                chainPlan.removeAdds ("flatliner");
+                chainPlan.adds.push_back ({ "flatliner", tracks[i].name, "Its level swings " + juce::String (swing, 0) + " dB. Put Flatliner first on the track, then PRESCRIBE again." });
                 chainPlan.onTracks.insert (0, "FLATLINER on " + (tracks[i].name.isNotEmpty() ? tracks[i].name : juce::String ("the lead"))
                                               + ": its level swings " + juce::String (swing, 0) + " dB. Put it first on that track, then PRESCRIBE again.");
                 break;
@@ -825,7 +832,7 @@ void MasterProcessor::outputTargetChanged()
         if (target.index >= 0 && target.index < (int) genres.size())
         {
             auto fresh = mst::planChain (chainPlan.before, genres[(size_t) target.index], hr);
-            fresh.tracks = chainPlan.tracks; fresh.tracksNote = chainPlan.tracksNote; fresh.onTracks = chainPlan.onTracks;
+            fresh.tracks = chainPlan.tracks; fresh.tracksNote = chainPlan.tracksNote; fresh.onTracks = chainPlan.onTracks; fresh.adds = chainPlan.adds;
             fresh.masterFix.eq = chainPlan.masterFix.eq; fresh.masterFix.eqOn = chainPlan.masterFix.eqOn; fresh.masterEq = chainPlan.masterEq;
             fresh.changes.erase (std::remove_if (fresh.changes.begin(), fresh.changes.end(), [] (const mst::ChainChange& c) { return c.plugin == "master" && c.param == "eq"; }), fresh.changes.end());
             for (auto& c : chainPlan.changes) if (c.plugin == "master" && c.param == "eq") fresh.changes.push_back (c);

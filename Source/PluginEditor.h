@@ -42,15 +42,37 @@ private:
 };
 
 // MY PLUGINS: the prescribed chain and whether each plugin is linked and in the right spot
+// YOUR TRACKS: each track and the plugins to put on it, in order (scrolls)
+class TrackChainList : public juce::Component, public juce::TooltipClient
+{
+public:
+    struct Plug { juce::String kind, name; int status = 0; int order = 9; };   // status: 0 linked, 1 add it, 2 linked late, 3 gone
+    struct Row { juce::String track, role, tip; std::vector<Plug> plugs; };
+    void setRows (std::vector<Row> r, int width);
+    void paint (juce::Graphics&) override;
+    juce::String getTooltip() override;
+    bool empty() const { return rows.empty(); }
+    static constexpr int rowH = 38;
+private:
+    std::vector<Row> rows;
+};
+
 class ChainView : public juce::Component
 {
 public:
+    ChainView();
     void paint (juce::Graphics&) override;
+    void resized() override;
+    void rebuildTracks (const std::vector<mst::ChainPlan::TrackAdd>& adds);   // after setting 'tracks'
     std::vector<MasterProcessor::StepStatus> steps;
     std::vector<MasterProcessor::TrackStatus> tracks;
     juce::StringArray onTracks;
     bool hasPlan = false, orderKnown = false;
     int stage = 0;
+private:
+    juce::Rectangle<float> tracksArea() const;
+    juce::Viewport tracksView;
+    TrackChainList trackList;
 };
 
 // MY PLUGINS: the five steps (LISTEN, PRESCRIBE, PLACE, APPLY, REFINE) and where you are

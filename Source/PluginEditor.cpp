@@ -418,6 +418,151 @@ void StepList::paint (juce::Graphics& g)
     }
 }
 
+//==============================================================================
+static int plugOrder (const juce::String& kind)
+{
+    // BuzzKill right after the amp sim, Flatliner before the levelling, The Servant, then Low Blow's duck last
+    if (kind == "buzzkill") return 0;
+    if (kind == "flatliner") return 1;
+    if (kind == "servant") return 2;
+    if (kind == "lowblow") return 3;
+    return 4;
+}
+
+void TrackChainList::setRows (std::vector<Row> r, int width)
+{
+    rows = std::move (r);
+    setSize (width, juce::jmax (1, (int) rows.size() * rowH));
+    repaint();
+}
+
+juce::String TrackChainList::getTooltip()
+{
+    const int i = getMouseXYRelative().y / rowH;
+    return juce::isPositiveAndBelow (i, (int) rows.size()) ? rows[(size_t) i].tip : juce::String();
+}
+
+void TrackChainList::paint (juce::Graphics& g)
+{
+    const auto ok = juce::Colour (0xff9aa86a);
+    for (size_t i = 0; i < rows.size(); ++i)
+    {
+        const auto& row = rows[i];
+        auto r = juce::Rectangle<float> (0, (float) i * rowH, (float) getWidth(), (float) rowH).reduced (0, 2);
+        if (i % 2 == 0) { g.setColour (juce::Colours::white.withAlpha (0.03f)); g.fillRoundedRectangle (r, 3.0f); }
+        r = r.reduced (4, 1);
+        auto top = r.removeFromTop (16);
+        top.removeFromLeft (2);
+        g.setColour (pal::paintDim); g.setFont (ledFont (10.0f));
+        g.drawText (row.role.toUpperCase(), top.removeFromRight (90).toNearestInt(), juce::Justification::centredRight);
+        g.setColour (pal::paint); g.setFont (tex::stencil (13.0f).withExtraKerningFactor (0.05f));
+        g.drawFittedText (row.track.toUpperCase(), top.toNearestInt(), juce::Justification::centredLeft, 1, 0.7f);
+
+        // the chain, each plugin with a lamp: green = linked to The Master, red = add it, yellow = joined late
+        auto line = r.withTrimmedLeft (12);
+        auto labelOf = [] (const Plug& p, int n) { return juce::String (n) + " " + p.name.toUpperCase() + (p.status == 3 ? " (GONE)" : ""); };
+        float fs = 12.0f, total = 0;
+        for (; fs >= 9.0f; fs -= 0.5f)
+        {
+            const auto f = tex::stencil (fs).withExtraKerningFactor (0.04f);
+            total = 0;
+            for (size_t k = 0; k < row.plugs.size(); ++k)
+                total += 11.0f + (float) juce::GlyphArrangement::getStringWidthInt (f, labelOf (row.plugs[k], (int) k + 1)) + (k + 1 < row.plugs.size() ? 18.0f : 0.0f);
+            if (total <= line.getWidth()) break;
+        }
+        const auto f = tex::stencil (fs).withExtraKerningFactor (0.04f);
+        g.setFont (f);
+        float x = line.getX();
+        for (size_t k = 0; k < row.plugs.size(); ++k)
+        {
+            const auto& p = row.plugs[k];
+            const auto label = labelOf (p, (int) k + 1);
+            const auto col = p.status == 0 ? ok : (p.status == 2 ? pal::hazard : pal::signalHot);
+            auto lamp = juce::Rectangle<float> (7, 7).withCentre ({ x + 3.5f, line.getCentreY() });
+            if (p.status == 0) { juce::Path lp; lp.addEllipse (lamp); juce::DropShadow (ok.withAlpha (0.6f), 5, {}).drawForPath (g, lp); g.setColour (ok); g.fillEllipse (lamp); }
+            else { g.setColour (col); g.drawEllipse (lamp.reduced (0.5f), 1.4f); }
+            x += 11.0f;
+            const float w = (float) juce::GlyphArrangement::getStringWidthInt (f, label) + 2.0f;
+            g.setColour (p.status == 0 ? ok.brighter (0.25f) : col);
+            g.drawText (label, juce::Rectangle<float> (x, line.getY(), w, line.getHeight()).toNearestInt(), juce::Justification::centredLeft, false);
+            x += w;
+            if (k + 1 < row.plugs.size())
+            {
+                g.setColour (pal::rustLight.withAlpha (0.8f)); g.drawText (">", juce::Rectangle<float> (x, line.getY(), 16, line.getHeight()).toNearestInt(), juce::Justification::centred);
+                x += 16;
+            }
+        }
+    }
+}
+
+ChainView::ChainView()
+{
+    tracksView.setViewedComponent (&trackList, false);
+    tracksView.setScrollBarsShown (true, false);
+    tracksView.setScrollBarThickness (8);
+    tracksView.setSingleStepSizes (10, TrackChainList::rowH);
+    tracksView.getVerticalScrollBar().setColour (juce::ScrollBar::thumbColourId, pal::rust);
+    tracksView.getVerticalScrollBar().setColour (juce::ScrollBar::trackColourId, juce::Colour (0xff1a1410));
+    addChildComponent (tracksView);
+}
+
+juce::Rectangle<float> ChainView::tracksArea() const
+{
+    auto r = getLocalBounds().toFloat().reduced (12, 8);
+    return r.removeFromRight (r.getWidth() * 0.46f);
+}
+
+void ChainView::resized()
+{
+    tracksView.setBounds (tracksArea().withTrimmedTop (20).toNearestInt());
+    trackList.setRows ({}, tracksView.getWidth() - 10);
+}
+
+void ChainView::rebuildTracks (const std::vector<mst::ChainPlan::TrackAdd>& adds)
+{
+    std::vector<TrackChainList::Row> rows;
+    auto rowFor = [&] (const juce::String& name) -> TrackChainList::Row&
+    {
+        const auto key = name.isNotEmpty() ? name : juce::String ("(unnamed track)");
+        for (auto& r : rows) if (r.track.equalsIgnoreCase (key)) return r;
+        rows.push_back ({ key, {}, {}, {} });
+        return rows.back();
+    };
+    for (auto& t : tracks)
+    {
+        auto& row = rowFor (t.name);
+        TrackChainList::Plug p;
+        p.kind = t.kind; p.name = mst::plugDisplayName (t.kind); p.order = plugOrder (t.kind);
+        p.status = ! t.linked ? 3 : (t.planned ? 0 : 2);
+        row.plugs.push_back (p);
+        if (t.kind == "servant") row.role = t.role;
+        else if (row.role.isEmpty()) row.role = t.role;
+        const auto line = p.name + ": " + (t.linked ? t.summary : juce::String ("not linked any more"));
+        row.tip << (row.tip.isEmpty() ? "" : "\n") << line;
+    }
+    for (auto& a : adds)
+    {
+        auto& row = rowFor (a.track.isNotEmpty() ? a.track : juce::String ("Guitar and bass tracks"));
+        if (a.track.isEmpty()) row.role = "amp noise";
+        bool have = false;
+        for (auto& p : row.plugs) if (p.kind == a.kind) have = true;
+        if (! have) row.plugs.push_back ({ a.kind, mst::plugDisplayName (a.kind), 1, plugOrder (a.kind) });
+        row.tip << (row.tip.isEmpty() ? "" : "\n") << "ADD " << mst::plugDisplayName (a.kind) << ": " << a.why;
+    }
+    for (auto& r : rows)
+        std::stable_sort (r.plugs.begin(), r.plugs.end(), [] (const TrackChainList::Plug& a, const TrackChainList::Plug& b) { return a.order < b.order; });
+    // tracks that need something added come first
+    std::stable_sort (rows.begin(), rows.end(), [] (const TrackChainList::Row& a, const TrackChainList::Row& b)
+    {
+        auto needs = [] (const TrackChainList::Row& r) { for (auto& p : r.plugs) if (p.status == 1 || p.status == 3) return true; return false; };
+        return needs (a) && ! needs (b);
+    });
+    const int y = tracksView.getViewPositionY();
+    trackList.setRows (std::move (rows), tracksView.getWidth() - 10);
+    tracksView.setVisible (! trackList.empty());
+    tracksView.setViewPosition (0, y);
+}
+
 void ChainView::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat();
@@ -432,40 +577,24 @@ void ChainView::paint (juce::Graphics& g)
     {
         auto rr = right;
         g.setColour (pal::rustLight); g.setFont (tex::stencil (13.0f).withExtraKerningFactor (0.08f));
-        g.drawText ("YOUR TRACKS  //  SERVANT, BUZZKILL, FLATLINER", rr.removeFromTop (17).toNearestInt(), juce::Justification::centredLeft);
-        if (tracks.empty())
+        auto head = rr.removeFromTop (17);
+        if (! trackList.empty())
+        {
+            // key: green lamp = linked to The Master, red ring = add it
+            auto key = head.removeFromRight (128); head.removeFromRight (10);
+            g.setFont (ledFont (9.0f));
+            g.setColour (juce::Colour (0xff9aa86a)); g.fillEllipse (key.getX(), key.getCentreY() - 3, 6, 6);
+            g.drawText ("LINKED", key.withTrimmedLeft (9).removeFromLeft (52).toNearestInt(), juce::Justification::centredLeft);
+            g.setColour (pal::signalHot); g.drawEllipse (key.getX() + 62, key.getCentreY() - 3, 6, 6, 1.2f);
+            g.drawText ("ADD IT", key.withTrimmedLeft (71).toNearestInt(), juce::Justification::centredLeft);
+            g.setColour (pal::rustLight); g.setFont (tex::stencil (13.0f).withExtraKerningFactor (0.08f));
+        }
+        g.drawFittedText ("YOUR TRACKS  //  PLUGINS, IN ORDER", head.toNearestInt(), juce::Justification::centredLeft, 1, 0.7f);
+        if (trackList.empty())
         {
             g.setColour (pal::paintDim); g.setFont (bodyFont (11.5f));
             g.drawFittedText ("No Servants linked. Put The Servant on your tracks and set each one's ROLE: The Master then shares the tone, "
                               "compression and level fixes out to the tracks that cause them.", rr.toNearestInt(), juce::Justification::topLeft, 6, 0.9f);
-        }
-        else
-        {
-            const int maxRows = (int) (rr.getHeight() / 29.0f);
-            for (int i = 0; i < (int) tracks.size() && i < maxRows; ++i)
-            {
-                const auto& t = tracks[(size_t) i];
-                auto row = rr.removeFromTop (29.0f);
-                if (i == maxRows - 1 && (int) tracks.size() > maxRows)
-                {
-                    g.setColour (pal::paintDim); g.setFont (bodyFont (11.0f));
-                    g.drawText ("+ " + juce::String ((int) tracks.size() - i) + " more tracks (see the log)", row.toNearestInt(), juce::Justification::centredLeft);
-                    break;
-                }
-                const auto col = ! t.linked ? pal::signalHot : (t.planned ? juce::Colour (0xff9aa86a) : pal::hazard);
-                g.setColour (col); g.fillEllipse (row.getX(), row.getY() + 5, 7, 7);
-                auto top = row.removeFromTop (15).withTrimmedLeft (12);
-                g.setColour (pal::paint); g.setFont (tex::stencil (12.5f).withExtraKerningFactor (0.05f));
-                const bool helper = t.kind != "servant";
-                const auto meta = helper ? mst::plugDisplayName (t.kind).toUpperCase()
-                                         : t.role.toUpperCase() + (t.share >= 0 ? "  " + juce::String (juce::roundToInt (t.share * 100.0f)) + "%" : juce::String());
-                g.setColour (helper ? pal::hazard : pal::paintDim); g.setFont (ledFont (10.0f));
-                g.drawText (meta, top.toNearestInt(), juce::Justification::centredRight);
-                g.setColour (pal::paint); g.setFont (tex::stencil (12.5f).withExtraKerningFactor (0.05f));
-                g.drawFittedText (t.name.toUpperCase(), top.withTrimmedRight (90).toNearestInt(), juce::Justification::centredLeft, 1, 0.7f);
-                g.setColour (t.linked ? pal::paint.withAlpha (0.75f) : pal::signalHot); g.setFont (bodyFont (10.5f));
-                g.drawFittedText (t.linked ? t.summary : "not linked any more", row.withTrimmedLeft (12).toNearestInt(), juce::Justification::topLeft, 1, 0.8f);
-            }
         }
     }
 
@@ -1153,7 +1282,7 @@ MasterEditor::MasterEditor (MasterProcessor& p) : AudioProcessorEditor (&p), pro
             safe->lastChainSig = -1;
         });
     };
-    chainView.setInterceptsMouseClicks (false, false);
+    chainView.setInterceptsMouseClicks (false, true);   // the YOUR TRACKS list scrolls
     logViewport.setViewedComponent (&changeLog, false);
     logViewport.setScrollBarsShown (true, false);
     logViewport.setScrollBarThickness (10);
@@ -1541,7 +1670,11 @@ void MasterEditor::timerCallback()
             chainView.hasPlan = cp.valid && proc.getChainStage() >= 1;
             chainView.steps = proc.chainStatus();
             chainView.tracks = proc.trackStatus();
-            chainView.onTracks = cp.onTracks;
+            chainView.onTracks.clear();
+            for (auto& l : cp.onTracks)   // per-track plugins now live in YOUR TRACKS; keep only general notes here
+                if (! (l.startsWith ("BUZZKILL") || l.startsWith ("FLATLINER") || l.startsWith ("LOW BLOW") || l.startsWith ("THE SERVANT")))
+                    chainView.onTracks.add (l);
+            chainView.rebuildTracks (proc.getChainStage() >= 1 ? cp.adds : std::vector<mst::ChainPlan::TrackAdd>());
             chainView.orderKnown = proc.chainOrderKnown();
             chainView.stage = proc.getChainStage();
             chainView.repaint();
