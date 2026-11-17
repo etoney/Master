@@ -5,7 +5,8 @@
 
 The Master listens to your finished mix, compares it with how records in your
 genre usually measure, and tells you what to fix, in plain English. Where one
-of our plugins does the job (Dominatrix, Chop Shop, Flatliner, BuzzKill) it
+of our plugins does the job (The Freak, Dominatrix, Chop Shop, Flatliner,
+BuzzKill) it
 tells you which one and how to set it.
 
 It has two pages:
@@ -170,14 +171,17 @@ FIX IT WITH MY PLUGINS  (the main way: The Master sets your plugins for you)
   the master bus, then sets their controls for you over Castle Danger Link
   (automatic, offline, on your computer only).
 
-  Needs Dominatrix 1.2+, Chop Shop 1.1+ and, for tracks, The Servant 0.5+,
+  Needs Dominatrix 1.2+, Chop Shop 1.1+, The Freak 1.0+ and, for tracks,
+  The Servant 0.5+,
   BuzzKill 2.1+ and Flatliner 1.1+.
 
   1. Play the whole song with only The Master on the master bus.
   2. PRESCRIBE. THE PRESCRIPTION lists the chain, in order, for example:
-        1 CHOP SHOP   shaves the peaks that stick out
-        2 DOMINATRIX  glue, colour, stereo, loudness into the -1 dB ceiling
-        3 THE MASTER  last: measures, plus the tone EQ and a safety limiter
+        1 THE FREAK   dynamic EQ: cuts the ranges that jump out, only when
+                      they do (only prescribed when your mix needs it)
+        2 CHOP SHOP   shaves the peaks that stick out
+        3 DOMINATRIX  glue, colour, stereo, loudness into the -1 dB ceiling
+        4 THE MASTER  last: measures, plus the tone EQ and a safety limiter
      plus advice for individual tracks (BuzzKill for hum, Flatliner...).
   3. Put the plugins on the master bus in that order, BEFORE The Master.
      Each one shows LINKED as soon as it's found. Play a few seconds and The
@@ -191,6 +195,18 @@ FIX IT WITH MY PLUGINS  (the main way: The Master sets your plugins for you)
      came out and fine-tunes (mostly Dominatrix's OUTPUT for loudness, Chop
      Shop's CEILING if the peaks still stick out), and explains each step.
   Override anything on the plugins themselves at any time.
+
+  THE FREAK (dynamic EQ)
+  While it listens, The Master measures how far each range (sub, bass, low,
+  low mid, mid, hi mid, presence, bite, sheen) jumps above its usual share
+  of the mix in the loud moments. A range that jumps more than is normal for
+  it gets one of The Freak's six bands, set to cut 2-6 dB only while it
+  jumps, with the threshold above the range's ordinary ups and downs. Jumps
+  that happen on every beat (drum hits) are treated as the music, so it
+  takes a lot more before The Freak touches them. The static tone balance
+  stays with The Master's TONE MATCH EQ, so the two never fight. Each Freak
+  band shows The Master's reason under its knobs.
+
   NEW PRESCRIPTION starts over (take the plugins off or bypass them and
   play the song again first, so The Master hears the untreated mix).
 

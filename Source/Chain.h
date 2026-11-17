@@ -3,6 +3,7 @@
 // the exact settings for each, and a plain-English reason for every change.
 #include "Cure.h"
 #include "Helpers.h"
+#include "Freak.h"
 
 namespace mst
 {
@@ -18,6 +19,7 @@ struct ChainStep
 {
     juce::String kind, name, role;       // "chopshop", "Chop Shop", "Shaves the drum peaks..."
     std::map<juce::String, float> params;
+    juce::StringArray notes;             // The Freak: a short reason per band, shown in the plugin
 };
 
 struct ChainPlan
@@ -54,6 +56,7 @@ struct ChainPlan
             auto* po = new juce::DynamicObject();
             for (auto& [k, v] : s.params) po->setProperty (k, (double) v);
             so->setProperty ("params", juce::var (po));
+            if (! s.notes.isEmpty()) so->setProperty ("notes", s.notes.joinIntoString ("\n"));
             st.add (juce::var (so));
         }
         o->setProperty ("steps", st);
@@ -109,6 +112,11 @@ struct ChainPlan
                 s.kind = sv.getProperty ("kind", "").toString(); s.name = sv.getProperty ("name", "").toString(); s.role = sv.getProperty ("role", "").toString();
                 if (auto* po = sv.getProperty ("params", {}).getDynamicObject())
                     for (auto& p : po->getProperties()) s.params[p.name.toString()] = (float) (double) p.value;
+                if (sv.hasProperty ("notes"))
+                {
+                    s.notes = juce::StringArray::fromLines (sv.getProperty ("notes", "").toString());
+                    while (s.notes.size() < 6) s.notes.add ({});
+                }
                 c.steps.push_back (s);
             }
         if (auto* ch = v.getProperty ("changes", {}).getArray())
@@ -146,6 +154,7 @@ struct ChainPlan
 
 inline juce::String plugDisplayName (const juce::String& kind)
 {
+    if (kind == "freak") return "The Freak";
     if (kind == "chopshop") return "Chop Shop";
     if (kind == "dominatrix") return "Dominatrix";
     if (kind == "servant") return "The Servant";
@@ -175,6 +184,30 @@ inline ChainPlan planChain (const Features& in, const GenreProfile& g)
     float gain = L.mean - in.lufs;                         // loudness still to find
     const bool squashed = zPlr < -1.5f;
     if (squashed) gain = std::min (gain, 0.0f);
+
+    // ---- THE FREAK: dynamic EQ on the ranges that jump around (first, so the rest of the chain sees a steadier mix)
+    {
+        auto fp = planFreak (in, g);
+        if (! fp.bands.empty())
+        {
+            juce::StringArray what;
+            for (auto& b : fp.bands) what.add (juce::String (bandDefs()[(size_t) b.range].label));
+            ChainStep s { "freak", "The Freak", "Dynamic EQ: cuts " + what.joinIntoString (", ") + " only in the moments they jump out, so nothing gets dulled the rest of the time." };
+            s.params = fp.params;
+            s.notes = fp.notes;
+            c.steps.push_back (s);
+            for (int i = 0; i < (int) fp.bands.size(); ++i)
+            {
+                const auto& b = fp.bands[(size_t) i];
+                const auto n = "b" + juce::String (i + 1);
+                const auto fq = b.freq >= 1000.0f ? juce::String (b.freq / 1000.0f, 1) + " kHz" : juce::String (juce::roundToInt (b.freq)) + " Hz";
+                change ("freak", n + "d", "BAND " + juce::String (i + 1) + " (" + juce::String (bandDefs()[(size_t) b.range].label) + ", "
+                                          + (b.type == 2 ? "HIGH SHELF " : "") + fq + ") DEPTH", b.depth, "dB",
+                        b.why + " Threshold " + juce::String (b.thr, 1) + " dB, so the range's ordinary ups and downs pass untouched.");
+            }
+            change ("freak", "amount", "AMOUNT", 100.0f, "%", "Every band at the depth set above. Turn it down if you want The Freak gentler overall.");
+        }
+    }
 
     // ---- CHOP SHOP: shave the peaks that stick out, so the rest of the chain can get loud cleanly
     float shave = 0.0f;
@@ -266,7 +299,9 @@ inline ChainPlan planChain (const Features& in, const GenreProfile& g)
         mf.loudOn = true; mf.gainDb = 0.0f; mf.ceilingDb = -1.0f;      // catches anything the EQ pushes over
         c.masterFix = mf;
         c.masterEq = fx.p.eqOn;
-        if (fx.p.eqOn) change ("master", "eq", "TONE MATCH EQ", 1.0f, "ON", fx.whyEq + " (None of your linked plugins is an EQ, so The Master does this part.)");
+        const bool freak = c.step ("freak") != nullptr;
+        if (fx.p.eqOn) change ("master", "eq", "TONE MATCH EQ", 1.0f, "ON", fx.whyEq + (freak ? juce::String (" (The Freak handles the ranges that jump around; this is the steady balance.)")
+                                                                                       : juce::String (" (None of your linked plugins does static EQ, so The Master does this part.)")));
         change ("master", "loud", "SAFETY LIMITER", -1.0f, "dBTP", "Catches any peak the EQ pushes over -1 dBTP. With no gain it only acts on stray peaks.");
         c.cantFix = fx.cantFix;
     }

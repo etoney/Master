@@ -67,6 +67,11 @@ struct Features
     float humDb = 0.0f;                 // how far the hum fundamental sits above its neighbours (dB)
     int humHz = 0;                      // 50 or 60 when hum was found
     float humSeconds = 0.0f, quietSeconds = 0.0f;
+    // How much each range jumps around (for The Freak). Measured in ~170 ms windows over the loud parts:
+    // swing = how far the range's share of the mix rises in its loudest moments above its typical share (p90 - p50, dB);
+    // levelSwing = the same for the range's own level (includes the song's ups and downs). 0 = not measured.
+    std::array<float, kNumBands> swing {}, levelSwing {};
+    std::array<float, kNumBands> swingSpread {};   // p75 - p25 of the share: big when the range jumps on every beat (drums), small for rare jumps
 
     float get (int f) const
     {
@@ -109,6 +114,12 @@ struct Features
         o->setProperty ("humHz", humHz);
         o->setProperty ("humSeconds", (double) humSeconds);
         o->setProperty ("quietSeconds", (double) quietSeconds);
+        juce::Array<juce::var> sw, lsw;
+        for (int b = 0; b < kNumBands; ++b) { sw.add ((double) swing[(size_t) b]); lsw.add ((double) levelSwing[(size_t) b]); }
+        o->setProperty ("swing", sw);
+        o->setProperty ("levelSwing", lsw);
+        juce::Array<juce::var> ssp; for (auto v : swingSpread) ssp.add ((double) v);
+        o->setProperty ("swingSpread", ssp);
         return juce::var (o);
     }
     static Features fromVar (const juce::var& v)
@@ -125,6 +136,9 @@ struct Features
         x.humHz = (int) v.getProperty ("humHz", 0);
         x.humSeconds = (float) (double) v.getProperty ("humSeconds", 0.0);
         x.quietSeconds = (float) (double) v.getProperty ("quietSeconds", 0.0);
+        if (auto* a = v.getProperty ("swing", {}).getArray()) for (int b = 0; b < juce::jmin (kNumBands, a->size()); ++b) x.swing[(size_t) b] = (float) (double) (*a)[b];
+        if (auto* a = v.getProperty ("swingSpread", {}).getArray()) for (int b = 0; b < juce::jmin (kNumBands, a->size()); ++b) x.swingSpread[(size_t) b] = (float) (double) (*a)[b];
+        if (auto* a = v.getProperty ("levelSwing", {}).getArray()) for (int b = 0; b < juce::jmin (kNumBands, a->size()); ++b) x.levelSwing[(size_t) b] = (float) (double) (*a)[b];
         x.valid = x.seconds >= 1.0;
         return x;
     }
@@ -220,6 +234,7 @@ public:
         sLL = sRR = sLR = sMM = sSS = 0; lLL = lRR = lLR = 0;
         std::fill (binPower.begin(), binPower.end(), 0.0);
         frames = 0; inFill = 0;
+        winFrames = 0; winBand.fill (0.0); winRows.clear();
         std::fill (inL.begin(), inL.end(), 0.0f); std::fill (inR.begin(), inR.end(), 0.0f);
         if (os) os->reset();
         tpFill = 0; tpMax = 0; spMax = 0;
@@ -336,6 +351,26 @@ public:
         for (int b = 0; b < kNumBands; ++b)
             f.band[(size_t) b] = total > 0 ? (float) (10.0 * std::log10 (std::max (1e-12, bp[(size_t) b] / total))) : -60.0f;
 
+        // how much each range jumps around, over the loud parts
+        if (winRows.size() >= 20)
+        {
+            std::vector<float> tot;
+            for (auto& w : winRows) tot.push_back (w.total);
+            auto pct = [] (std::vector<float> v, double q) { std::sort (v.begin(), v.end()); return v[(size_t) juce::jlimit (0, (int) v.size() - 1, (int) std::lround (q * (double) (v.size() - 1)))]; };
+            const float gate = pct (tot, 0.95) - 20.0f;
+            std::vector<const WinRow*> loud;
+            for (auto& w : winRows) if (w.total > gate) loud.push_back (&w);
+            if (loud.size() >= 20)
+                for (int b = 0; b < kNumBands; ++b)
+                {
+                    std::vector<float> sh, lv;
+                    for (auto* w : loud) { sh.push_back (w->level[(size_t) b] - w->total); lv.push_back (w->level[(size_t) b]); }
+                    f.swing[(size_t) b] = pct (sh, 0.9) - pct (sh, 0.5);
+                    f.levelSwing[(size_t) b] = pct (lv, 0.9) - pct (lv, 0.5);
+                    f.swingSpread[(size_t) b] = pct (sh, 0.75) - pct (sh, 0.25);
+                }
+        }
+
         // stereo
         f.correlation = sLL > 0 && sRR > 0 ? (float) juce::jlimit (-1.0, 1.0, sLR / std::sqrt (sLL * sRR)) : 1.0f;
         f.lowCorrelation = lLL > 1e-9 && lRR > 1e-9 ? (float) juce::jlimit (-1.0, 1.0, lLR / std::sqrt (lLL * lRR)) : 1.0f;
@@ -400,13 +435,28 @@ private:
                 std::fill (fftBuf.begin(), fftBuf.end(), 0.0f);
                 for (int i = 0; i < N; ++i) fftBuf[(size_t) i] = in[(size_t) i] * window[(size_t) i];
                 fft->performRealOnlyForwardTransform (fftBuf.data(), true);
-                for (int k = 0; k <= N / 2; ++k)
+                int b = 0;
+                for (int k = 1; k <= N / 2; ++k)
                 {
                     const double re = fftBuf[(size_t) (2 * k)], im = fftBuf[(size_t) (2 * k + 1)];
-                    binPower[(size_t) k] += 0.5 * (re * re + im * im);
+                    const double pw = 0.5 * (re * re + im * im);
+                    binPower[(size_t) k] += pw;
+                    const double hz = (double) k * sr / (double) N;
+                    if (hz < 20.0 || hz >= 20000.0) continue;
+                    while (b < kNumBands - 1 && hz >= bandDefs()[(size_t) b].hi) ++b;
+                    winBand[(size_t) b] += pw;
                 }
             }
             ++frames;
+            if (++winFrames >= 4)   // ~170 ms at 48 kHz
+            {
+                WinRow w;
+                double tot = 0;
+                for (int b = 0; b < kNumBands; ++b) { tot += winBand[(size_t) b]; w.level[(size_t) b] = (float) (10.0 * std::log10 (std::max (1e-20, winBand[(size_t) b]))); }
+                w.total = (float) (10.0 * std::log10 (std::max (1e-20, tot)));
+                winRows.push_back (w);
+                winBand.fill (0.0); winFrames = 0;
+            }
         }
         // slide by one hop
         std::copy (inL.begin() + hop, inL.end(), inL.begin());
@@ -474,6 +524,10 @@ private:
     std::unique_ptr<juce::dsp::FFT> fft;
     std::vector<float> window, fftBuf, inL, inR;
     std::vector<double> binPower;
+    struct WinRow { std::array<float, kNumBands> level {}; float total = -200.0f; };
+    std::vector<WinRow> winRows;          // per ~170 ms window: each range's level and the total, dB
+    std::array<double, kNumBands> winBand {};
+    int winFrames = 0;
     int64_t frames = 0;
 
     std::unique_ptr<juce::dsp::Oversampling<float>> os;

@@ -741,6 +741,14 @@ juce::String MasterProcessor::applyChain()
         const auto* step = chainPlan.step (s.kind);
         const auto& peer = peers.at (s.peerId);
         sendSet (s.peerId, step->params, "The Master: " + chainPlan.genreName + " prescription");
+        if (! step->notes.isEmpty())
+        {
+            auto m = cdlink::Endpoint::makeMessage ("freak-notes");   // The Freak shows why each band is there
+            juce::Array<juce::var> a;
+            for (auto& nt : step->notes) a.add (nt);
+            m->setProperty ("notes", a);
+            link->send (m, s.peerId);
+        }
         for (auto& c : chainPlan.changes)
             if (c.plugin == s.kind)
             {

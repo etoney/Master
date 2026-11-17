@@ -540,6 +540,45 @@ int main (int argc, char** argv)
         check (mst::ProfilePack::parse (exported.loadFileAsString(), ep, perr) && ep.find ("myMyBand") == nullptr, "exporting a pack leaves your own profiles out");
     }
 
+    // ---------------- The Freak: which ranges jump around, and the bands it gets
+    {
+        auto byId = [&] (const char* id) -> const mst::GenreProfile& { for (auto& g : factory.genres) if (g.id == id) return g; return factory.genres[0]; };
+        const auto& pop = byId ("pop");
+        auto pinkMix = [] (bool bursts)
+        {
+            auto pk = std::make_shared<std::array<Pink, 2>>();
+            return Gen ([pk, bursts] (int64_t n, int ch)
+            {
+                float s = 0.3f * (*pk)[(size_t) ch].next (noise (n * 2 + ch));
+                const double t = (double) n / SR;
+                if (bursts && std::fmod (t, 2.0) < 0.3)   // a harsh 2.9 kHz spike, 15 % of the time
+                    s += 0.12f * (float) std::sin (juce::MathConstants<double>::twoPi * 2900.0 * t);
+                return s;
+            });
+        };
+        const auto steady = analyse (pinkMix (false), 30.0);
+        const auto harsh = analyse (pinkMix (true), 30.0);
+        float maxSteady = 0; for (auto v : steady.swing) maxSteady = std::max (maxSteady, v);
+        check (steady.valid && maxSteady > 0.0f && maxSteady < 3.0f, "steady pink noise: no range jumps around (max swing " + juce::String (maxSteady, 1) + " dB)");
+        check (harsh.swing[6] > 8.0f && harsh.swing[3] < 3.0f, "2.9 kHz spikes: PRESENCE swings " + juce::String (harsh.swing[6], 1) + " dB, LOW MID " + juce::String (harsh.swing[3], 1));
+        auto f0 = mst::planFreak (steady, pop);
+        auto f1 = mst::planFreak (harsh, pop);
+        check (f0.bands.empty() && f0.params.at ("b1on") == 0.0f, "The Freak: nothing to do on a steady mix");
+        check (f1.bands.size() == 1 && f1.bands[0].range == 6 && f1.params.at ("b1on") == 1.0f && std::abs (f1.params.at ("b1f") - 2900.0f) < 1.0f
+               && f1.params.at ("b1d") <= -2.0f && f1.params.at ("b1d") >= -6.0f && f1.params.at ("b2on") == 0.0f && f1.notes[0].contains ("PRESENCE"),
+               "The Freak: one band on PRESENCE (2.9 kHz, depth " + juce::String (f1.params.count ("b1d") ? f1.params.at ("b1d") : 0.0f, 0) + " dB, threshold "
+               + juce::String (f1.params.count ("b1t") ? f1.params.at ("b1t") : 0.0f, 1) + " dB) with a reason");
+        auto c0 = mst::planChain (steady, pop), c1 = mst::planChain (harsh, pop);
+        check (c0.step ("freak") == nullptr && c1.step ("freak") != nullptr && c1.steps[0].kind == "freak" && c1.steps.back().kind == "dominatrix",
+               "prescription: The Freak first (only when needed), Dominatrix last before The Master");
+        bool why = false; for (auto& c : c1.changes) if (c.plugin == "freak" && c.why.contains ("PRESENCE") && c.why.contains ("Threshold")) why = true;
+        check (why, "The Freak's band change explains the range, the jump and the threshold");
+        const auto rt = mst::ChainPlan::fromVar (c1.toVar());
+        check (rt.step ("freak") != nullptr && rt.step ("freak")->notes.size() == 6 && rt.step ("freak")->notes[0] == c1.step ("freak")->notes[0], "Freak step + notes survive save/load");
+        const auto fv = mst::Features::fromVar (harsh.toVar());
+        check (std::abs (fv.swing[6] - harsh.swing[6]) < 0.01f, "swing measurements survive save/load");
+    }
+
     // ---------------- BuzzKill and Flatliner on the tracks
     {
         auto byId = [&] (const char* id) -> const mst::GenreProfile& { for (auto& g : factory.genres) if (g.id == id) return g; return factory.genres[0]; };
@@ -707,6 +746,8 @@ int main (int argc, char** argv)
         };
         Fake dom { "dominatrix", { { "discipline", 30 }, { "outputDb", 0 }, { "ceiling", 0 }, { "bassMono", 0 }, { "width", 100 }, { "satType", 0 }, { "saturation", 20 } } };
         Fake chop { "chopshop", { { "ceilingDb", 0 }, { "mode", 0 }, { "shape", 0 } } };
+        Fake frk { "freak", { { "b1on", 0 }, { "b1d", -6 }, { "amount", 100 } } };
+        int freakNotes = 0; juce::String freakNote0;
         Fake gtr { "servant", { { "trim", 0 }, { "comp", 0 }, { "compOn", 0 }, { "toneOn", 0 } } };
         Fake vox { "servant", { { "trim", 0 }, { "comp", 0 }, { "compOn", 0 }, { "toneOn", 0 } } };
         Fake bkz { "buzzkill", { { "release", 0.35 }, { "listen", 1 } } };
@@ -714,9 +755,15 @@ int main (int argc, char** argv)
         int finishAsked = 0, finishSeqSeen = 0;
         juce::var watcherEnv;
         cdlink::Endpoint watcher ("watch", [&] (const juce::var& m) { if (m.getProperty ("kind", "").toString() == "master" && m.getProperty ("type", "").toString() == "status") watcherEnv = m.getProperty ("env", {}); }, other);
-        for (auto* f : { &dom, &chop, &gtr, &vox, &bkz, &flt })
-            f->ep = std::make_unique<cdlink::Endpoint> (f->kind, [f, &finishAsked, &finishSeqSeen] (const juce::var& m)
+        for (auto* f : { &dom, &chop, &frk, &gtr, &vox, &bkz, &flt })
+            f->ep = std::make_unique<cdlink::Endpoint> (f->kind, [f, &finishAsked, &finishSeqSeen, &freakNotes, &freakNote0] (const juce::var& m)
             {
+                if (m.getProperty ("type", "").toString() == "freak-notes" && f->kind == "freak")
+                {
+                    ++freakNotes;
+                    if (auto* a = m.getProperty ("notes", {}).getArray(); a != nullptr && a->size() > 0) freakNote0 = (*a)[0].toString();
+                    return;
+                }
                 if (m.getProperty ("type", "").toString() == "analyze-finish" && f->kind == "servant") { ++finishAsked; finishSeqSeen = m.getProperty ("seq", 0); return; }
                 if (m.getProperty ("type", "").toString() != "set") return;
                 f->lastSet = m; ++f->sets;
@@ -744,7 +791,14 @@ int main (int argc, char** argv)
                 for (int i = 0; i < a->size(); ++i)
                 {
                     const double v = (*a)[i];
-                    auto shape = [&] (const char* s) { return juce::String (s) == "same" ? v : (juce::String (s) == "wobble" ? v + ((i % 3) - 1) * 2.0 : v + ((i % 5) - 2) * 3.0); };
+                    auto shape = [&] (const char* s)
+                    {
+                        const juce::String k (s);
+                        if (k == "same") return v;
+                        if (k == "wobble") return v + ((i % 3) - 1) * 2.0;
+                        if (k == "zig") return v + ((i % 4) * 2 - 3) * 2.5;
+                        return v + ((i % 5) - 2) * 3.0;
+                    };
                     in.add (shape (inShape)); out.add (shape (outShape));
                 }
             o->setProperty ("in", in); o->setProperty ("out", out);
@@ -812,7 +866,16 @@ int main (int argc, char** argv)
                    juce::String::formatted ("both Servants finished (decided their clean-up), then PRESCRIBE from the analysis (%d asked)", finishAsked));
         }
         const auto& cp = p.getChainPlan();
-        check (cp.steps.size() == 2 && cp.steps[0].kind == "chopshop" && cp.steps[1].kind == "dominatrix", "prescription: Chop Shop, then Dominatrix, then The Master");
+        const bool hasFreak = cp.step ("freak") != nullptr;
+        {
+            juce::StringArray kinds; for (auto& s : cp.steps) kinds.add (s.kind);
+            check (kinds.joinIntoString (",") == (hasFreak ? "freak,chopshop,dominatrix" : "chopshop,dominatrix"),
+                   "prescription: " + kinds.joinIntoString (" > ") + " > The Master");
+            juce::StringArray fb;
+            if (hasFreak) for (int b = 1; b <= 6; ++b) if (cp.step ("freak")->params.at ("b" + juce::String (b) + "on") > 0.5f)
+                fb.add (juce::String (cp.step ("freak")->params.at ("b" + juce::String (b) + "f"), 0) + " Hz " + juce::String (cp.step ("freak")->params.at ("b" + juce::String (b) + "d"), 0) + " dB");
+            std::printf ("       (drum mix: The Freak %s)\n", hasFreak ? fb.joinIntoString (", ").toRawUTF8() : "not needed");
+        }
         check (cp.step ("dominatrix")->params.at ("outputDb") > 3.0f && cp.step ("dominatrix")->params.at ("ceiling") == 0.0f, "Dominatrix: OUTPUT drives into the -1 dB ceiling");
         check (cp.step ("chopshop")->params.at ("ceilingDb") < cp.before.samplePeak - 1.0f && cp.step ("chopshop")->params.at ("shape") == 1.0f, "Chop Shop: soft ceiling under the loudest peaks");
         bool allWhy = ! cp.changes.empty(); for (auto& c : cp.changes) allWhy = allWhy && c.why.isNotEmpty();
@@ -837,14 +900,17 @@ int main (int argc, char** argv)
             if (! watcherEnv.isObject()) return;
             sendStatus (dom, envWith (watcherEnv, "wobble", "same"));     // Dominatrix's output = The Master's input
             sendStatus (chop, envWith (watcherEnv, "spiky", "wobble"));   // Chop Shop's output = Dominatrix's input
+            if (hasFreak) sendStatus (frk, envWith (watcherEnv, "zig", "spiky"));   // The Freak's output = Chop Shop's input
         };
         pinger.startTimer (250);
         p.setNonRealtime (false);
         for (int round = 0; round < 30; ++round) { play (0.2, true); pump (30); }
         auto st = p.chainStatus();
-        check (st.size() == 2 && st[0].linked && st[1].linked, "both prescribed plugins are linked");
-        check (p.chainOrderKnown() && st[0].position == 0 && st[1].position == 1 && st[0].orderOk && st[1].orderOk,
-               juce::String::formatted ("chain order detected from the level fingerprints (chop %d, dom %d)", st[0].position, st[1].position));
+        bool allLinked = st.size() == cp.steps.size(), inOrder = p.chainOrderKnown();
+        juce::String posTxt;
+        for (int i = 0; i < (int) st.size(); ++i) { allLinked = allLinked && st[(size_t) i].linked; inOrder = inOrder && st[(size_t) i].position == i && st[(size_t) i].orderOk; posTxt << st[(size_t) i].kind << " " << st[(size_t) i].position << "  "; }
+        check (allLinked, "every prescribed bus plugin is linked");
+        check (inOrder, "chain order detected from the level fingerprints (" + posTxt.trim() + ")");
 
         p.setPluginMode (true);
         std::unique_ptr<juce::AudioProcessorEditor> ped (p.createEditor());
@@ -869,6 +935,9 @@ int main (int argc, char** argv)
                "BuzzKill and Flatliner received their settings");
         check (dom.sets == 1 && std::abs (dom.params["outputDb"] - cp.step ("dominatrix")->params.at ("outputDb")) < 0.01 && chop.sets == 1
                && std::abs (chop.params["ceilingDb"] - cp.step ("chopshop")->params.at ("ceilingDb")) < 0.01, "Dominatrix and Chop Shop received their settings");
+        if (hasFreak)
+            check (frk.sets == 1 && std::abs (frk.params["b1d"] - cp.step ("freak")->params.at ("b1d")) < 0.01 && frk.params.count ("b6on") && freakNotes == 1 && freakNote0.isNotEmpty(),
+                   "The Freak received its bands and the reason for each (" + freakNote0 + ")");
         bool confirmed = true; int n = 0;
         int servantEntries = 0, helperEntries = 0;
         for (auto& e : p.getLog())
@@ -905,7 +974,7 @@ int main (int argc, char** argv)
 
         juce::MemoryBlock stt; p.getStateInformation (stt);
         MasterProcessor q; q.setStateInformation (stt.getData(), (int) stt.getSize());
-        check (q.getChainStage() == 2 && q.getChainPlan().steps.size() == 2 && ! q.getLog().empty(), "the prescription and log are saved with the project");
+        check (q.getChainStage() == 2 && q.getChainPlan().steps.size() == cp.steps.size() && ! q.getLog().empty(), "the prescription and log are saved with the project");
     }
 
     // ---------------- GUI
