@@ -263,7 +263,8 @@ private:
     Knob *amountKnob = nullptr, *levelerKnob = nullptr, *tameKnob = nullptr, *widthKnob = nullptr, *gainKnob = nullptr;
     std::array<std::unique_ptr<juce::Slider>, mst::kNumBands> eqSliders;
     std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, mst::kNumBands> eqAtts;
-    std::unique_ptr<Selector> humSel, ceilSel;
+    std::unique_ptr<Selector> humSel, ceilSel, outSel;
+    juce::Label outLabel;
     std::vector<std::unique_ptr<FixSection>> sections;
     FixInfo fixInfo;
     std::vector<juce::Component*> analyzeComps, fixComps, chainComps;

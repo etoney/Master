@@ -84,6 +84,9 @@ public:
     mst::Features getDisplayFeatures (bool& fromSavedProject) const;
     mst::Features getAfterFeatures() const { mst::Features f; postWorker.getSnapshot (f); return f; }
     bool isFixOn() const { return apvts.getRawParameterValue ("fixOn")->load() > 0.5f; }
+    // OUTPUT: -6 dB leaves headroom for a separate mastering step (default); -1 dB = a finished, loud master
+    bool headroomMode() const { return apvts.getRawParameterValue ("headroom")->load() < 0.5f; }
+    float outputCeilingDb() const { return headroomMode() ? -6.0f : -1.0f; }
 
     // ---- AUTO FIX
     // Works out the corrections from what's been heard and sets every fix control.
@@ -129,6 +132,7 @@ public:
     bool isWaitingForServants() const { return pendingPrescribe != nullptr; }
     juce::String applyChain();                     // sends the settings (needs every prescribed plugin linked)
     juce::String refineChain();                    // after a play-through: fine-tune from what came out
+    void outputTargetChanged();                    // OUTPUT -6 / -1 dB flipped: re-plan the loudness part from the stored analysis
     int getChainStage() const { return chainStage; }   // 0 nothing, 1 prescribed, 2 applied
     const mst::ChainPlan& getChainPlan() const { return chainPlan; }
     const std::vector<LogEntry>& getLog() const { return chainLog; }

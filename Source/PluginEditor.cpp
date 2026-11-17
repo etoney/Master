@@ -1107,8 +1107,18 @@ MasterEditor::MasterEditor (MasterProcessor& p) : AudioProcessorEditor (&p), pro
     makeSection (MasterProcessor::secLoud, "loudOn", "Loudness + limiter on/off.");
     gainKnob = &makeKnob ("gain", "GAIN", "How hard the mix is pushed into the true-peak limiter. AUTO FIX aims for the genre's loudness.");
     gainKnob->slider.getProperties().set ("neutral", 0.0);
-    ceilSel = std::make_unique<Selector> (p.apvts.getParameter ("ceiling"), juce::StringArray { "-1.0", "-2.0", "-0.3" }, 14.0f);
-    ceilSel->setTooltip ("True-peak ceiling. -1.0 dBTP: streaming (Spotify, Apple Music, YouTube). -2.0: extra safe for MP3/AAC. -0.3: CD / download masters.");
+    ceilSel = std::make_unique<Selector> (p.apvts.getParameter ("ceiling"), juce::StringArray { "-1.0", "-2.0", "-0.3", "-6.0" }, 14.0f);
+    ceilSel->setTooltip ("True-peak ceiling. -1.0 dBTP: streaming (Spotify, Apple Music, YouTube). -2.0: extra safe for MP3/AAC. -0.3: CD / download masters. -6.0: headroom for a separate mastering step.");
+    outSel = std::make_unique<Selector> (p.apvts.getParameter ("headroom"), juce::StringArray { "-6 dB", "-1 dB" }, 14.0f);
+    outSel->setTooltip ("OUTPUT TARGET. -6 dB: peaks held under -6 dB with no loudness push, leaving headroom for a separate mastering step. "
+                        "-1 dB: a finished master, as loud as your genre, peaks at -1 dBTP for streaming.");
+    outSel->onChange = [this] (int) { proc.outputTargetChanged(); refreshNow(); };
+    addChildComponent (*outSel);
+    outLabel.setText ("OUTPUT", juce::dontSendNotification);
+    outLabel.setFont (tex::stencil (14.0f).withExtraKerningFactor (0.1f));
+    outLabel.setColour (juce::Label::textColourId, pal::paint);
+    outLabel.setTooltip (outSel->getTooltip());
+    addChildComponent (outLabel);
 
     for (auto* c : std::initializer_list<juce::Component*> { &autoFixButton, &fixOnButton, &matchButton, &bassMonoButton, humSel.get(), ceilSel.get(), &fixInfo })
     {
@@ -1229,6 +1239,8 @@ void MasterEditor::updateVisibility()
     builtInButton.setButtonText (chainMode ? "OR USE BUILT-IN FIXES" : "<  BACK TO MY PLUGINS");
     pageTabs.setLabels ({ "ANALYZE", chainMode ? "FIX IT WITH MY PLUGINS" : "FIX IT: BUILT-IN FIXES" });
     autoFixButton.setVisible (page == 1);
+    outSel->setVisible (page == 1);
+    outLabel.setVisible (page == 1);
     fixInfo.setVisible (page == 1);
     newRxButton.setVisible (page == 1 && chainMode && proc.getChainStage() >= 1);
     autoFixButton.setButtonText (! chainMode ? "AUTO FIX" : (proc.getChainStage() == 0 ? "PRESCRIBE" : proc.getChainStage() == 1 ? "APPLY" : "REFINE"));
@@ -1308,7 +1320,9 @@ void MasterEditor::resized()
 void MasterEditor::layoutFixPage()
 {
     // left column: THE CURE
-    autoFixButton.setBounds (28, 324, 238, 52);
+    outLabel.setBounds (34, 309, 66, 24);
+    outSel->setBounds (100, 307, 166, 28);
+    autoFixButton.setBounds (28, 339, 238, 41);
     fixOnButton.setBounds (28, 382, 238, 30);
     matchButton.setBounds (28, 416, 238, 30);
     placeKnob (*amountKnob, { 28, 452, 238, 110 });
@@ -1403,12 +1417,12 @@ void MasterEditor::updateReport()
     const auto& gp = genres[(size_t) target.index];
     const auto fx = reportAfter ? post : pre;
     if (reportAfter) saved = false;
-    report = mst::advise (fx, gp);
+    report = mst::advise (fx, gp, proc.headroomMode());
 
     // FIX IT page: scores, the plan's reasons, AUTO markers
     {
-        fixInfo.before = pre.valid ? mst::advise (pre, gp).score : -1;
-        fixInfo.after = post.valid && proc.isFixOn() ? mst::advise (post, gp).score : -1;
+        fixInfo.before = pre.valid ? mst::advise (pre, gp, proc.headroomMode()).score : -1;
+        fixInfo.after = post.valid && proc.isFixOn() ? mst::advise (post, gp, proc.headroomMode()).score : -1;
         const auto& plan = proc.getPlan();
         fixInfo.cantFix = plan.valid ? plan.cantFix : juce::StringArray();
         if (! plan.valid) fixInfo.setFrom = pre.valid ? "Press AUTO FIX to correct what The Master heard." : "Play the whole song, then press AUTO FIX.";
@@ -1432,8 +1446,8 @@ void MasterEditor::updateReport()
         {
             const auto& cp = proc.getChainPlan();
             const int stage = proc.getChainStage();
-            fixInfo.before = cp.valid ? mst::advise (cp.before, gp).score : (pre.valid ? mst::advise (pre, gp).score : -1);
-            fixInfo.after = stage >= 2 && post.valid ? mst::advise (post, gp).score : -1;
+            fixInfo.before = cp.valid ? mst::advise (cp.before, gp, proc.headroomMode()).score : (pre.valid ? mst::advise (pre, gp, proc.headroomMode()).score : -1);
+            fixInfo.after = stage >= 2 && post.valid ? mst::advise (post, gp, proc.headroomMode()).score : -1;
             fixInfo.cantFix = cp.valid ? cp.cantFix : juce::StringArray();
             fixInfo.setFrom = stage == 0 ? (pre.valid ? "Ready: press PRESCRIBE." : "Play the whole song first.")
                             : "Prescription from " + mmss (cp.seconds) + " of your mix, aiming at " + cp.genreName.toUpperCase() + "."
@@ -1971,8 +1985,6 @@ void MasterEditor::buildBackdrop()
     {
         g.setColour (pal::screen); g.fillRoundedRectangle (logViewport.getBounds().toFloat(), 4.0f);
         g.setColour (juce::Colours::black.withAlpha (0.55f)); g.fillRoundedRectangle (stepList.getBounds().toFloat().expanded (4.0f, 4.0f), 4.0f);
-        auto hint = tex::distressedText ("YOUR PLUGINS.  MY SETTINGS.", 238, 14, tex::plainBold (9.5f), pal::paint.withAlpha (0.7f), juce::Justification::centred, scale, 0.15f, 89, 0.14f);
-        g.setOpacity (1.0f); g.drawImage (hint, juce::Rectangle<float> (28.0f, 305.0f, 238.0f, 14.0f));
     }
     else
     {   // EQ: stamped band names, dB scale, a dark well behind the faders
@@ -1984,8 +1996,6 @@ void MasterEditor::buildBackdrop()
             auto t = tex::distressedText (mst::bandDefs()[(size_t) b].label, (int) cw, 14, tex::stencil (11.5f), pal::paint, juce::Justification::centred, scale, 0.15f, 70 + b, 0.06f);
             g.setOpacity (1.0f); g.drawImage (t, juce::Rectangle<float> (300.0f + cw * (float) b, 313.0f, cw, 14.0f));
         }
-        auto hint = tex::distressedText ("ONE BUTTON.  OVERRIDE ANYTHING.", 238, 14, tex::plainBold (9.5f), pal::paint.withAlpha (0.7f), juce::Justification::centred, scale, 0.15f, 88, 0.14f);
-        g.setOpacity (1.0f); g.drawImage (hint, juce::Rectangle<float> (28.0f, 305.0f, 238.0f, 14.0f));
     }
 
     // ANALYSIS plate (LISTEN / RESET / PROFILES)

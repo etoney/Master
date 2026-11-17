@@ -575,6 +575,16 @@ int main (int argc, char** argv)
         check (why, "The Freak's band change explains the range, the jump and the threshold");
         const auto rt = mst::ChainPlan::fromVar (c1.toVar());
         check (rt.step ("freak") != nullptr && rt.step ("freak")->notes.size() == 6 && rt.step ("freak")->notes[0] == c1.step ("freak")->notes[0], "Freak step + notes survive save/load");
+        {
+            const auto lo = mst::planChain (harsh, pop, false), hi = mst::planChain (harsh, pop, true);
+            const auto* dl = lo.step ("dominatrix"); const auto* dh = hi.step ("dominatrix");
+            check (dl->params.at ("ceiling") == 0.0f && dh->params.at ("ceiling") == 1.0f && dh->params.at ("outputDb") < dl->params.at ("outputDb")
+                   && hi.masterFix.ceilingDb == -6.0f && hi.headroom,
+                   juce::String::formatted ("OUTPUT -6 dB plan: Dominatrix CEILING -6, OUTPUT %.1f (peaks to -6.3) instead of %.1f; safety limiter -6", dh->params.at ("outputDb"), dl->params.at ("outputDb")));
+            const auto quietMix = mst::advise (harsh, pop, true);
+            bool loudFix = false; for (auto& it : quietMix.items) if (it.title.contains ("QUIETER")) loudFix = true;
+            check (! loudFix && mst::advise (harsh, pop, true).score >= mst::advise (harsh, pop, false).score, "OUTPUT -6 dB: the report doesn't mark a mix down for being quieter than a finished record");
+        }
         const auto fv = mst::Features::fromVar (harsh.toVar());
         check (std::abs (fv.swing[6] - harsh.swing[6]) < 0.01f, "swing measurements survive save/load");
     }
@@ -670,6 +680,7 @@ int main (int argc, char** argv)
         p.setNonRealtime (true);
         p.prepareToPlay (SR, 512);
         p.setGenreChoice ("rock");
+        p.apvts.getParameter ("headroom")->setValueNotifyingHost (1.0f);   // these checks are for a finished -1 dB master
         juce::MidiBuffer midi;
         mst::FBiquad mud[2]; mud[0].design (1, SR, 330.0, 1.0, 8.0); mud[1].design (2, SR, 3000.0, 0.7, -6.0);
         auto bad = drumMix (0.25f);
@@ -723,6 +734,16 @@ int main (int argc, char** argv)
         check (q.getPlan().valid && q.isFixOn() && std::abs (q.currentFixParams().gainDb - p.currentFixParams().gainDb) < 0.05f && ! q.isOverridden (MasterProcessor::secLoud),
                "fixes and the AUTO plan are saved with the project");
         check (q.getLatencySamples() == 0 || q.getLatencySamples() == p.getLatencySamples(), "latency is constant");
+
+        // OUTPUT -6 dB: flipping it re-plans the loudness for headroom
+        p.apvts.getParameter ("headroom")->setValueNotifyingHost (0.0f);
+        p.outputTargetChanged();
+        check (p.headroomMode() && std::abs (p.currentFixParams().ceilingDb + 6.0f) < 0.01f, "OUTPUT -6 dB: built-in ceiling moves to -6 dBTP");
+        play (30.0);
+        const auto hr = p.getAfterFeatures();
+        check (hr.truePeak <= -6.0f && hr.truePeak > -8.5f, juce::String::formatted ("OUTPUT -6 dB: peaks land just under -6 dB (%.2f dBTP, %.1f LUFS)", hr.truePeak, hr.lufs));
+        MasterProcessor fresh;
+        check (fresh.headroomMode(), "a new Master defaults to OUTPUT -6 dB");
         p.apvts.getParameter ("fixOn")->setValueNotifyingHost (0.0f);
         check (p.getLatencySamples() > 0 && ! p.isFixOn(), "FIX off keeps the same latency (A/B doesn't shift timing)");
     }
@@ -734,6 +755,7 @@ int main (int argc, char** argv)
         p.setPlayConfigDetails (2, 2, SR, 512);
         p.prepareToPlay (SR, 512);
         p.setGenreChoice ("rock");
+        p.apvts.getParameter ("headroom")->setValueNotifyingHost (1.0f);   // these checks are for a finished -1 dB master
         auto pump = [] (int ms) { juce::MessageManager::getInstance()->runDispatchLoopUntil (ms); };
 
         // fake Dominatrix + Chop Shop living in "another plugin binary" (a separate node: real socket)
@@ -975,6 +997,17 @@ int main (int argc, char** argv)
         juce::MemoryBlock stt; p.getStateInformation (stt);
         MasterProcessor q; q.setStateInformation (stt.getData(), (int) stt.getSize());
         check (q.getChainStage() == 2 && q.getChainPlan().steps.size() == cp.steps.size() && ! q.getLog().empty(), "the prescription and log are saved with the project");
+
+        // OUTPUT -6 dB after APPLY: the bus part is re-planned from the same analysis and sent again
+        pinger.startTimer (250);
+        const int domSetsBefore = dom.sets;
+        p.apvts.getParameter ("headroom")->setValueNotifyingHost (0.0f);
+        p.outputTargetChanged();
+        for (int i = 0; i < 40 && dom.sets == domSetsBefore; ++i) pump (50);
+        check (p.getChainPlan().headroom && dom.sets > domSetsBefore && std::abs (dom.params["ceiling"] - 1.0) < 0.01
+               && std::abs (p.currentFixParams().ceilingDb + 6.0f) < 0.01f && p.getChainPlan().tracks.size() == cp.tracks.size(),
+               juce::String::formatted ("OUTPUT -6 dB after APPLY: Dominatrix CEILING -6 dB, OUTPUT %.1f dB, safety limiter -6 dBTP, tracks kept", dom.params["outputDb"]));
+        pinger.stopTimer();
     }
 
     // ---------------- GUI

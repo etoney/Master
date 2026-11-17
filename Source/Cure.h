@@ -60,7 +60,7 @@ struct FixPlan
 // after: analysis of The Master's output with the current fix settings, if it has heard
 //        enough (used to fine-tune the loudness on a second AUTO FIX)
 // currentGainDb / loudnessWasOn: the LOUDNESS settings that 'after' was measured with
-inline FixPlan planFixes (const Features& in, const Features* after, float currentGainDb, bool loudnessWasOn, const GenreProfile& g)
+inline FixPlan planFixes (const Features& in, const Features* after, float currentGainDb, bool loudnessWasOn, const GenreProfile& g, bool headroom = false)
 {
     FixPlan plan;
     if (! in.valid) return plan;
@@ -173,11 +173,20 @@ inline FixPlan planFixes (const Features& in, const Features* after, float curre
             const float overshoot = in.truePeak + gain - (-1.0f);   // the limiter eats some of the gain
             if (overshoot > 0.0f) gain += juce::jmin (4.0f, overshoot * 0.3f);
         }
+        if (headroom)
+        {
+            // -6 dB mode: peaks just under -6 dBFS, no loudness push (left for the mastering step)
+            refined = after != nullptr && after->valid && after->seconds >= 20.0 && loudnessWasOn;
+            gain = refined ? currentGainDb + (after->truePeak < -7.5f ? -6.3f - after->truePeak : 0.0f) : -6.3f - in.truePeak;
+        }
         if (g.z (fPlr, in.plr) < -1.5f) gain = std::min (gain, 0.0f);   // don't squash a squashed mix further
         p.gainDb = juce::jlimit (-6.0f, 12.0f, std::round (gain * 10.0f) / 10.0f);
-        p.ceilingDb = -1.0f;
+        p.ceilingDb = headroom ? -6.0f : -1.0f;
         p.loudOn = true;
-        if (refined)
+        if (headroom)
+            plan.whyLoud = "OUTPUT TARGET -6 dB: brings your peaks (" + juce::String (in.truePeak, 1) + " dBTP) to just under -6 dB and holds them there, "
+                           "leaving 6 dB of headroom for a separate mastering step. No loudness push.";
+        else if (refined)
             plan.whyLoud = "Fine-tuned from what came out last time: aiming for " + juce::String (L.mean, 1) + " LUFS (" + G + "), peaks held at -1 dBTP.";
         else
             plan.whyLoud = "Aims for " + juce::String (L.mean, 1) + " LUFS (typical " + G + ") from " + juce::String (in.lufs, 1)

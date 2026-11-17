@@ -108,7 +108,8 @@ inline void bandAdvice (int b, bool hot, const juce::String& genre, const juce::
     }
 }
 
-inline Report advise (const Features& x, const GenreProfile& g)
+// headroom: OUTPUT TARGET is -6 dB (a pre-master for a separate mastering step): loudness isn't judged, peaks are held to -6.
+inline Report advise (const Features& x, const GenreProfile& g, bool headroom = false)
 {
     Report r;
     r.genreName = g.name;
@@ -136,6 +137,11 @@ inline Report advise (const Features& x, const GenreProfile& g)
              "Only " + juce::String ((int) x.seconds) + " seconds heard so far. Loudness and dynamics readings settle after about 30 seconds; the whole song is best.");
 
     // ---- loudness
+    if (headroom)
+        add (Sev::good, "LOUDNESS", "LOUDNESS: LEFT FOR MASTERING",
+             fmt1 (x.lufs) + " LUFS. OUTPUT is set to -6 dB, so loudness is the mastering step's job (" + G + " masters end up around "
+                 + rangeOf (g.stat (fLufs), 1, " LUFS") + "). Switch OUTPUT to -1 dB for a finished, loud master.");
+    else
     {
         const auto st = g.stat (fLufs);
         const float z = r.z[fLufs], d = x.lufs - st.mean;
@@ -155,7 +161,18 @@ inline Report advise (const Features& x, const GenreProfile& g)
     }
 
     // ---- peaks / clipping
-    if (x.truePeak > -1.0f)
+    if (headroom)
+    {
+        if (x.truePeak > -6.0f)
+        {
+            penalty += 3.0f;
+            add (Sev::check, "PEAKS", "PEAKS OVER THE -6 dB HEADROOM",
+                 "Peaks reach " + signedDb (x.truePeak) + "TP. For a separate mastering step, leave 6 dB: The Master's prescription brings them under -6 dB.",
+                 plug::dominatrix, "Set CEILING to -6 dB.", 1.0f);
+        }
+        else add (Sev::good, "PEAKS", "HEADROOM KEPT", "True peak " + signedDb (x.truePeak) + "TP: 6 dB or more of room for mastering.");
+    }
+    else if (x.truePeak > -1.0f)
     {
         penalty += x.truePeak > 0.0f ? 12.0f : 6.0f;
         add (x.truePeak > 0.0f ? Sev::fix : Sev::check, "PEAKS", "TRUE PEAKS OVER -1 dBTP",

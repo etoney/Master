@@ -175,12 +175,24 @@ FIX IT WITH MY PLUGINS  (the main way: The Master sets your plugins for you)
   The Servant 0.5+,
   BuzzKill 2.1+ and Flatliner 1.1+.
 
+  OUTPUT (top of THE CURE, both FIX IT pages)
+    -6 dB  (default) a pre-master for a separate mastering step: peaks are
+           held just under -6 dBFS (Dominatrix CEILING -6 dB, safety
+           limiter -6 dBTP) and nothing is pushed for loudness. The report
+           doesn't mark the mix down for being quieter than a record.
+    -1 dB  a finished master: as loud as your genre, peaks at -1 dBTP for
+           Spotify, Apple Music and YouTube.
+    Flip it any time. After PRESCRIBE or APPLY The Master re-plans the
+    loudness part from the same analysis (no need to play the song again)
+    and sends the new settings. Projects made before 1.7 open on -1 dB.
+
   1. Play the whole song with only The Master on the master bus.
   2. PRESCRIBE. THE PRESCRIPTION lists the chain, in order, for example:
         1 THE FREAK   dynamic EQ: cuts the ranges that jump out, only when
                       they do (only prescribed when your mix needs it)
         2 CHOP SHOP   shaves the peaks that stick out
-        3 DOMINATRIX  glue, colour, stereo, loudness into the -1 dB ceiling
+        3 DOMINATRIX  glue, colour, stereo; loudness into the -1 dB ceiling,
+                      or peaks held at -6 dB with OUTPUT at -6 dB
         4 THE MASTER  last: measures, plus the tone EQ and a safety limiter
      plus advice for individual tracks (BuzzKill for hum, Flatliner...).
   3. Put the plugins on the master bus in that order, BEFORE The Master.

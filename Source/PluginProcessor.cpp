@@ -146,7 +146,7 @@ juce::StringArray MasterProcessor::fixParamIds()
 // any fix change: the 'after' analysis starts over so it always matches the settings
 void MasterProcessor::parameterChanged (const juce::String&, float) { postWorker.requestReset(); }
 
-static const float kCeilings[] = { -1.0f, -2.0f, -0.3f };
+static const float kCeilings[] = { -1.0f, -2.0f, -0.3f, -6.0f };
 
 mst::FixParams MasterProcessor::currentFixParams() const
 {
@@ -160,7 +160,7 @@ mst::FixParams MasterProcessor::currentFixParams() const
     p.dynOn = v ("dynOn") > 0.5f; p.glue = v ("glue") * 0.01f; p.leveler = v ("leveler") * 0.01f;
     p.stereoOn = v ("stereoOn") > 0.5f; p.width = v ("width") * 0.01f; p.bassMono = v ("bassMono") > 0.5f;
     p.humOn = v ("humOn") > 0.5f; p.humHz = (int) v ("humHz") == 0 ? 50 : 60;
-    p.loudOn = v ("loudOn") > 0.5f; p.gainDb = v ("gain"); p.ceilingDb = kCeilings[juce::jlimit (0, 2, (int) v ("ceiling"))];
+    p.loudOn = v ("loudOn") > 0.5f; p.gainDb = v ("gain"); p.ceilingDb = kCeilings[juce::jlimit (0, 3, (int) v ("ceiling"))];
     return p;
 }
 
@@ -188,7 +188,7 @@ void MasterProcessor::applySection (Section s, const mst::FixParams& f)
         case secLoud:
         {
             setParam ("loudOn", f.loudOn ? 1.0f : 0.0f); setParam ("gain", f.gainDb);
-            int ci = 0; for (int i = 0; i < 3; ++i) if (std::abs (kCeilings[i] - f.ceilingDb) < 0.01f) ci = i;
+            int ci = 0; for (int i = 0; i < 4; ++i) if (std::abs (kCeilings[i] - f.ceilingDb) < 0.01f) ci = i;
             setParam ("ceiling", (float) ci);
             break;
         }
@@ -207,7 +207,7 @@ juce::String MasterProcessor::applyAutoFix()
     if (target.index < 0 || target.index >= (int) genres.size()) return "No genre profile to aim for.";
     const auto cur = currentFixParams();
     const auto after = getAfterFeatures();
-    plan = mst::planFixes (in, &after, cur.gainDb, cur.on && cur.loudOn && after.valid, genres[(size_t) target.index]);
+    plan = mst::planFixes (in, &after, cur.gainDb, cur.on && cur.loudOn && after.valid, genres[(size_t) target.index], headroomMode());
     if (! plan.valid) return "Nothing analysed yet.";
     for (auto s : { secEq, secDyn, secStereo, secHum, secLoud }) applySection (s, plan.p);
     setParam ("amount", 100.0f);
@@ -271,7 +271,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout MasterProcessor::createLayou
     p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { "humHz", 1 }, "Hum Frequency", StringArray { "50 Hz", "60 Hz" }, 1));
     p.push_back (std::make_unique<AudioParameterBool> (ParameterID { "loudOn", 1 }, "Loudness On", false));
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { "gain", 1 }, "Loudness Gain", NormalisableRange<float> (-6.0f, 12.0f, 0.1f), 0.0f, dbAttr));
-    p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { "ceiling", 1 }, "Ceiling", StringArray { "-1.0 dBTP", "-2.0 dBTP", "-0.3 dBTP" }, 0));
+    p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { "ceiling", 1 }, "Ceiling", StringArray { "-1.0 dBTP", "-2.0 dBTP", "-0.3 dBTP", "-6.0 dBTP" }, 0));
+    p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { "headroom", 1 }, "Output Target",
+                                                        StringArray { "-6 dB (headroom for mastering)", "-1 dB (finished master)" }, 0));
     return { p.begin(), p.end() };
 }
 
@@ -414,7 +416,9 @@ void MasterProcessor::setStateInformation (const void* data, int sizeInBytes)
             state.removeProperty ("autoFix", nullptr);
             state.removeProperty ("chainPlan", nullptr);
             state.removeProperty ("uiVersion", nullptr);
+            const bool hadHeadroom = state.getChildWithProperty ("id", "headroom").isValid();
             apvts.replaceState (state);
+            if (! hadHeadroom) setParam ("headroom", 1.0f);   // projects from before 1.7 were made for a finished -1 dB master
         }
 }
 
@@ -613,7 +617,7 @@ juce::String MasterProcessor::prescribe()
     const auto target = resolveTarget (in);
     const auto& genres = library.genres();
     if (target.index < 0 || target.index >= (int) genres.size()) return "No genre profile to aim for.";
-    chainPlan = mst::planChain (in, genres[(size_t) target.index]);
+    chainPlan = mst::planChain (in, genres[(size_t) target.index], headroomMode());
 
     // The Servants on the tracks: tone, compression and balance shared out to the tracks that cause them
     std::vector<mst::TrackInfo> tracks;
@@ -799,6 +803,44 @@ juce::String MasterProcessor::applyChain()
     return {};
 }
 
+void MasterProcessor::outputTargetChanged()
+{
+    const bool hr = headroomMode();
+    const auto& genres = library.genres();
+    // MY PLUGINS: rebuild the bus part of the prescription from the analysis it was made from
+    if (chainPlan.valid && chainStage >= 1 && chainPlan.headroom != hr)
+    {
+        const auto target = resolveTarget (chainPlan.before);
+        if (target.index >= 0 && target.index < (int) genres.size())
+        {
+            auto fresh = mst::planChain (chainPlan.before, genres[(size_t) target.index], hr);
+            fresh.tracks = chainPlan.tracks; fresh.tracksNote = chainPlan.tracksNote; fresh.onTracks = chainPlan.onTracks;
+            fresh.masterFix.eq = chainPlan.masterFix.eq; fresh.masterFix.eqOn = chainPlan.masterFix.eqOn; fresh.masterEq = chainPlan.masterEq;
+            fresh.changes.erase (std::remove_if (fresh.changes.begin(), fresh.changes.end(), [] (const mst::ChainChange& c) { return c.plugin == "master" && c.param == "eq"; }), fresh.changes.end());
+            for (auto& c : chainPlan.changes) if (c.plugin == "master" && c.param == "eq") fresh.changes.push_back (c);
+            chainPlan = fresh;
+            if (chainStage >= 2 && applyChain().isNotEmpty()) chainStage = 1;   // plugins gone: back to "place them"
+            ++linkVersion;
+        }
+    }
+    // BUILT-IN FIXES: redo only the loudness + ceiling
+    if (plan.valid && isFixOn() && ! (chainPlan.valid && chainStage >= 2))
+    {
+        mst::Features in;
+        worker.getSnapshot (in);
+        bool saved = false;
+        if (! in.valid) in = getDisplayFeatures (saved);
+        const auto target = resolveTarget (in);
+        if (in.valid && target.index >= 0 && target.index < (int) genres.size())
+        {
+            const auto fresh = mst::planFixes (in, nullptr, 0.0f, false, genres[(size_t) target.index], hr);
+            plan.p.gainDb = fresh.p.gainDb; plan.p.ceilingDb = fresh.p.ceilingDb; plan.p.loudOn = true; plan.whyLoud = fresh.whyLoud;
+            applySection (secLoud, plan.p);
+            postWorker.requestReset();
+        }
+    }
+}
+
 juce::String MasterProcessor::refineChain()
 {
     if (chainStage < 2) return "APPLY the prescription first.";
@@ -814,13 +856,22 @@ juce::String MasterProcessor::refineChain()
     if (dom.isNotEmpty())
     {
         const float cur = (float) (double) peers.at (dom).params.getProperty ("outputDb", 0.0);
-        const float want = g.stat (mst::fLufs).mean - after.lufs;
+        float want = g.stat (mst::fLufs).mean - after.lufs;
+        juce::String why = "It came out at " + juce::String (after.lufs, 1) + " LUFS; the target for " + g.name + " is " + juce::String (g.stat (mst::fLufs).mean, 1) + ".";
+        if (chainPlan.headroom)
+        {
+            // -6 dB mode: peaks just under -6 dBFS, and no squashing (the mastering engineer gets the dynamics)
+            const float squash = chainPlan.before.plr - after.plr;
+            want = 0.0f;
+            if (squash > 2.0f) { want = -(squash - 1.0f); why = "The peaks came out " + juce::String (squash, 1) + " dB more squashed than your mix; backing off so the mastering step keeps its dynamics."; }
+            else if (after.truePeak < -7.5f) { want = -6.3f - after.truePeak; why = "Peaks came out at " + juce::String (after.truePeak, 1) + " dBTP; bringing them up to just under the -6 dB headroom line."; }
+        }
         const float next = juce::jlimit (-12.0f, 12.0f, std::round ((cur + want) * 10.0f) / 10.0f);
         if (std::abs (next - cur) >= 0.2f)
         {
             sendSet (dom, { { "outputDb", next } }, "The Master: refine loudness");
             added.push_back ({ "Dominatrix", "OUTPUT  " + juce::String (cur, 1) + " > " + juce::String (next, 1) + " dB",
-                               "It came out at " + juce::String (after.lufs, 1) + " LUFS; the target for " + g.name + " is " + juce::String (g.stat (mst::fLufs).mean, 1) + "." });
+                               why });
         }
         if (after.lowCorrelation < 0.9f && (double) peers.at (dom).params.getProperty ("bassMono", 0.0) < 0.5)
         {
@@ -829,7 +880,7 @@ juce::String MasterProcessor::refineChain()
         }
     }
     const auto chop = resolvePeer ("chopshop");
-    if (chop.isNotEmpty() && g.z (mst::fPlr, after.plr) > 1.0f)
+    if (chop.isNotEmpty() && ! chainPlan.headroom && g.z (mst::fPlr, after.plr) > 1.0f)   // with -6 dB headroom, peaks are the mastering step's job
     {
         const float cur = (float) (double) peers.at (chop).params.getProperty ("ceilingDb", 0.0);
         const float next = juce::jmax (-24.0f, cur - 1.0f);

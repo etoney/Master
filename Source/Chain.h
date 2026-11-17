@@ -30,6 +30,7 @@ struct ChainPlan
     std::vector<ChainStep> steps;             // in order, first to last (The Master always comes after them)
     std::vector<ChainChange> changes;
     bool masterEq = false;                    // The Master's own TONE MATCH EQ is part of the plan
+    bool headroom = false;                    // made for -6 dB output (headroom for a separate mastering step)
     FixParams masterFix;                      // its built-in settings in this mode (EQ + safety limiter only)
     juce::StringArray onTracks;               // advice for individual tracks (BuzzKill, Flatliner...)
     juce::StringArray cantFix;
@@ -71,6 +72,7 @@ struct ChainPlan
         }
         o->setProperty ("changes", ch);
         o->setProperty ("masterEq", masterEq);
+        o->setProperty ("headroom", headroom);
         FixPlan fp; fp.p = masterFix;
         o->setProperty ("masterFix", fp.toVar());
         o->setProperty ("onTracks", onTracks.joinIntoString ("\n"));
@@ -129,6 +131,7 @@ struct ChainPlan
                 c.changes.push_back (x);
             }
         c.masterEq = v.getProperty ("masterEq", false);
+        c.headroom = v.getProperty ("headroom", false);
         c.masterFix = FixPlan::fromVar (v.getProperty ("masterFix", {})).p;
         c.onTracks = juce::StringArray::fromLines (v.getProperty ("onTracks", "").toString()); c.onTracks.removeEmptyStrings();
         c.cantFix = juce::StringArray::fromLines (v.getProperty ("cantFix", "").toString()); c.cantFix.removeEmptyStrings();
@@ -165,11 +168,13 @@ inline juce::String plugDisplayName (const juce::String& kind)
 }
 
 // The prescription, from your mix as it was before any of these plugins were on the bus.
-inline ChainPlan planChain (const Features& in, const GenreProfile& g)
+// headroom: aim the output at -6 dB peaks for a separate mastering step instead of a loud -1 dB master.
+inline ChainPlan planChain (const Features& in, const GenreProfile& g, bool headroom = false)
 {
     ChainPlan c;
     if (! in.valid) return c;
     c.valid = true;
+    c.headroom = headroom;
     c.genreName = g.name;
     c.seconds = in.seconds;
     c.before = in;
@@ -212,7 +217,7 @@ inline ChainPlan planChain (const Features& in, const GenreProfile& g)
     // ---- CHOP SHOP: shave the peaks that stick out, so the rest of the chain can get loud cleanly
     float shave = 0.0f;
     if (zPlr > 0.8f) shave = juce::jlimit (1.5f, 6.0f, in.plr - g.stat (fPlr).mean + 1.0f);
-    else if (gain > 4.0f && ! squashed) shave = 2.0f;
+    else if (gain > 4.0f && ! squashed && ! headroom) shave = 2.0f;   // (shaving for loudness is the mastering step's job)
     if (shave > 0.0f)
     {
         ChainStep s { "chopshop", "Chop Shop", "Shaves the drum peaks that stick out, so Dominatrix can make the mix louder without squashing it." };
@@ -233,7 +238,8 @@ inline ChainPlan planChain (const Features& in, const GenreProfile& g)
 
     // ---- DOMINATRIX: glue, tone colour, stereo, loudness into the -1 dB ceiling
     {
-        ChainStep s { "dominatrix", "Dominatrix", "Glues the mix, adds colour, fixes the stereo picture, and brings it up to " + G + " loudness with a -1 dB ceiling." };
+        ChainStep s { "dominatrix", "Dominatrix", headroom ? juce::String ("Glues the mix, adds colour, fixes the stereo picture, and holds the peaks at -6 dB so the mastering step has room.")
+                                                     : "Glues the mix, adds colour, fixes the stereo picture, and brings it up to " + G + " loudness with a -1 dB ceiling." };
         // glue
         float discipline = 25.0f;
         juce::String whyDisc = "Gentle glue (0.5-2 dB of gain reduction) that most " + G + " masters have.";
@@ -272,9 +278,17 @@ inline ChainPlan planChain (const Features& in, const GenreProfile& g)
                             + ". OUTPUT pushes into the -1 dB ceiling to get there. Play the song again and press REFINE to land it exactly.";
         if (squashed) whyOut = "Already loud and squashed; no more drive.";
         if (gain > 12.0f) whyOut += " (Capped at +12 dB: turn the mix up before the master bus.)";
+        if (headroom)
+        {
+            // peaks land just under -6 dBFS; no loudness push, the mastering step does that
+            out = juce::jlimit (-12.0f, 12.0f, std::round ((-6.3f - (in.truePeak - shave)) * 10.0f) / 10.0f);
+            if (squashed) out = std::min (out, 0.0f);
+            whyOut = "OUTPUT set so your peaks (" + juce::String (in.truePeak, 1) + " dBTP" + (shave > 0.0f ? ", after Chop Shop" : "") + ") land just under -6 dB. "
+                     "No loudness push: that's left for the mastering step, with 6 dB of headroom to work in.";
+        }
 
         s.params = { { "discipline", discipline }, { "saturation", sat }, { "satType", (float) type }, { "analog", 0.0f }, { "mix", 100.0f },
-                     { "width", width }, { "bassMono", bassMono ? 1.0f : 0.0f }, { "outputDb", out }, { "ceiling", 0.0f }, { "quality", 1.0f }, { "match", 0.0f } };
+                     { "width", width }, { "bassMono", bassMono ? 1.0f : 0.0f }, { "outputDb", out }, { "ceiling", headroom ? 1.0f : 0.0f }, { "quality", 1.0f }, { "match", 0.0f } };
         c.steps.push_back (s);
         static const char* satNames[] = { "TAPE", "TUBE", "IRON", "CONSOLE", "WHIP" };
         change ("dominatrix", "discipline", "DISCIPLINE", discipline, "%", whyDisc);
@@ -285,24 +299,26 @@ inline ChainPlan planChain (const Features& in, const GenreProfile& g)
         change ("dominatrix", "bassMono", "BASS MONO", bassMono ? 1.0f : 0.0f, bassMono ? "ON" : "OFF",
                 bassMono ? "Below 120 Hz the channels differ (correlation " + juce::String (in.lowCorrelation, 2) + "). Kick and bass belong dead centre."
                          : "The low end is already centred.");
-        change ("dominatrix", "ceiling", "CEILING", 0.0f, "-1 dB", "-1 dB true peak is what Spotify, Apple Music and YouTube ask for.");
+        if (headroom) change ("dominatrix", "ceiling", "CEILING", 1.0f, "-6 dB", "Leaves 6 dB of headroom for a separate mastering step (OUTPUT TARGET is set to -6 dB on The Master).");
+        else          change ("dominatrix", "ceiling", "CEILING", 0.0f, "-1 dB", "-1 dB true peak is what Spotify, Apple Music and YouTube ask for.");
         change ("dominatrix", "outputDb", "OUTPUT", out, "dB", whyOut);
         change ("dominatrix", "match", "MATCH", 0.0f, "OFF", "MATCH must be off for the real loudness to come out.");
     }
 
     // ---- The Master itself: tone EQ (none of the linked plugins EQs) + a safety limiter at -1 dBTP
     {
-        auto fx = planFixes (in, nullptr, 0.0f, false, g);
+        auto fx = planFixes (in, nullptr, 0.0f, false, g, headroom);
         FixParams mf;
         mf.on = true; mf.amount = 1.0f;
         mf.eqOn = fx.p.eqOn; mf.eq = fx.p.eq;
-        mf.loudOn = true; mf.gainDb = 0.0f; mf.ceilingDb = -1.0f;      // catches anything the EQ pushes over
+        mf.loudOn = true; mf.gainDb = 0.0f; mf.ceilingDb = headroom ? -6.0f : -1.0f;      // catches anything the EQ pushes over
         c.masterFix = mf;
         c.masterEq = fx.p.eqOn;
         const bool freak = c.step ("freak") != nullptr;
         if (fx.p.eqOn) change ("master", "eq", "TONE MATCH EQ", 1.0f, "ON", fx.whyEq + (freak ? juce::String (" (The Freak handles the ranges that jump around; this is the steady balance.)")
                                                                                        : juce::String (" (None of your linked plugins does static EQ, so The Master does this part.)")));
-        change ("master", "loud", "SAFETY LIMITER", -1.0f, "dBTP", "Catches any peak the EQ pushes over -1 dBTP. With no gain it only acts on stray peaks.");
+        change ("master", "loud", "SAFETY LIMITER", mf.ceilingDb, headroom ? "-6 dBTP" : "-1 dBTP",
+                juce::String ("Catches any peak the EQ pushes over ") + (headroom ? "-6" : "-1") + " dBTP. With no gain it only acts on stray peaks.");
         c.cantFix = fx.cantFix;
     }
 
