@@ -3,7 +3,8 @@
   Castle Danger Music Company
 ===============================================================================
 
-The Master listens to your finished mix, compares it with how records in your
+The Master listens to your mix while you're still mixing (a rough mix with the
+levels roughly balanced is all it needs), compares it with how records in your
 genre usually measure, and tells you what to fix, in plain English. Where one
 of our plugins does the job (The Freak, Dominatrix, Chop Shop, Flatliner,
 BuzzKill) it
