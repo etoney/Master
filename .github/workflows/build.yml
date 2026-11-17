@@ -88,7 +88,10 @@ jobs:
           BR="downloads-$(echo $OS | tr 'A-Z' 'a-z')"
           mkdir -p /tmp/dl && cp "$ZIP" /tmp/dl/ && cd /tmp/dl && git init -q -b "$BR" && git add -A
           git -c user.name=ci -c user.email=ci@users.noreply.github.com commit -qm "$ZIP for ${GITHUB_SHA}"
-          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" "$BR"
+          for try in 1 2 3 4; do   # GitHub sometimes times out (HTTP 408) on the zip upload: retry
+            git -c http.postBuffer=157286400 push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" "$BR" && break
+            [ "$try" = 4 ] && exit 1; echo "push failed, retrying in 20 s"; sleep 20
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: TheMaster-${{ runner.os }}
