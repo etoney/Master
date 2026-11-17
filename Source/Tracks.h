@@ -23,6 +23,8 @@ struct TrackInfo
     std::vector<float> series;                  // linear power per 100 ms, aligned with the mix series
     // sibilance, measured by The Servant (dB of the "s" band over the whole signal, every 10 ms)
     float sibP50 = -45, sibP95 = -45, sibPerMin = 0, sibSeconds = 0, sibHz = 6500;
+    // transients, measured by The Servant: how far its hits jump over its own body (95th percentile, dB)
+    float transP95 = 0, transSeconds = 0;
 };
 
 struct TrackPlan
@@ -33,8 +35,8 @@ struct TrackPlan
     float share = 0;                            // of the mix's total power
     float gainToMix = 1;
     std::array<float, kNumBands> eq {};         // dB per band
-    float trimDb = 0, comp = 0, deess = 0;
-    bool compOn = false, deessOn = false;
+    float trimDb = 0, comp = 0, deess = 0, transAtk = 0, transSus = 0;
+    bool compOn = false, deessOn = false, transOn = false;
     juce::StringArray why;
     std::map<juce::String, float> params;       // what goes to The Servant
     juce::String summary() const
@@ -45,6 +47,8 @@ struct TrackPlan
         if (moves > 0) s.add ("EQ " + juce::String (moves) + (moves == 1 ? " band" : " bands"));
         if (compOn) s.add ("COMP " + juce::String (juce::roundToInt (comp)) + "%");
         if (deessOn) s.add ("DE-ESS " + juce::String (juce::roundToInt (deess)) + "%");
+        if (transOn && std::abs (transAtk) >= 1.0f) s.add ("ATTACK " + juce::String (transAtk > 0 ? "+" : "") + juce::String (juce::roundToInt (transAtk)) + "%");
+        if (transOn && std::abs (transSus) >= 1.0f) s.add ("SUSTAIN " + juce::String (transSus > 0 ? "+" : "") + juce::String (juce::roundToInt (transSus)) + "%");
         if (std::abs (trimDb) >= 0.2f) s.add ("TRIM " + juce::String (trimDb > 0 ? "+" : "") + juce::String (trimDb, 1));
         return s.isEmpty() ? juce::String ("no change") : s.joinIntoString ("  //  ");
     }
@@ -284,6 +288,61 @@ inline TracksResult planTracks (const Features& mix, const GenreProfile& g, std:
         }
     }
 
+    // 5b) transients: drums get more snap when the mix is flat (or their own hits are soft), a kick that
+    //     booms in a crowded low end gets a shorter tail, spiky picking on a rhythm part is softened when
+    //     the mix's peaks already stick out. Never on a track whose hits are already hard.
+    {
+        const auto gk = (g.id.isNotEmpty() ? g.id : g.name).toLowerCase().removeCharacters (" _-");
+        float boost = 15.0f;
+        if (gk == "metal") boost = 30.0f; else if (gk == "hardrock") boost = 25.0f; else if (gk == "punk") boost = 20.0f; else if (gk == "pop") boost = 10.0f;
+        const float zPlr = g.z (fPlr, mix.plr);
+        const float lowZ = (g.z (fBand0 + 0, mix.band[0]) + g.z (fBand0 + 1, mix.band[1]) + g.z (fBand0 + 2, mix.band[2])) / 3.0f;
+        const float lowMidZ = g.z (fBand0 + 3, mix.band[3]);
+        auto pct = [] (float v) { return (v > 0 ? "+" : "") + juce::String (juce::roundToInt (v)) + "%"; };
+        for (size_t i = 0; i < n; ++i)
+        {
+            const auto& t = tracks[i];
+            auto& p = plans[i];
+            const bool known = t.transSeconds >= 5.0f;
+            const bool drumHit = roleIs (p.role, { "Kick", "Snare" }), kit = roleIs (p.role, { "Drums" });
+            if (drumHit || kit)
+            {
+                const float soft = kit ? 7.0f : 9.0f, hard = kit ? 14.0f : 16.0f;
+                const bool tooHard = known && t.transP95 > hard;
+                if (! tooHard && zPlr <= 1.0f && (zPlr < -0.5f || (known && t.transP95 < soft)))
+                {
+                    p.transAtk = zPlr < -1.5f ? boost + 15.0f : boost;
+                    p.why.add ("ATTACK " + pct (p.transAtk) + ": " + (zPlr < -0.5f
+                               ? "the mix's peaks sit only " + juce::String (mix.plr, 1) + " dB over its average (flat for " + G + "), so the hits get more snap at the source"
+                               : "this track's hits only jump " + juce::String (t.transP95, 0) + " dB over its body: soft for a " + p.role.toLowerCase())
+                               + ". It lifts the first few ms of each hit, not the level.");
+                }
+                else if (! roleIs (p.role, { "Kick" }) && zPlr > 1.0f)
+                {
+                    p.transAtk = -15.0f;
+                    p.why.add ("ATTACK " + pct (p.transAtk) + ": the mix's peaks stick out (" + juce::String (mix.plr, 1) + " dB over the average); taking a little off each hit here is cleaner than squashing the whole mix.");
+                }
+                if (roleIs (p.role, { "Kick" }) && (lowZ > 0.8f || gk == "metal"))
+                {
+                    p.transSus = lowZ > 0.8f ? -30.0f : -20.0f;
+                    p.why.add ("SUSTAIN " + pct (p.transSus) + ": " + (lowZ > 0.8f ? juce::String ("the mix's low end is crowded for ") + G + ", so the kick's boom is shortened and the bass gets the space between hits"
+                                                                                 : juce::String ("a tighter kick, like ") + G + " records"));
+                }
+                if (kit && lowMidZ > 0.8f)
+                {
+                    p.transSus = -20.0f;
+                    p.why.add ("SUSTAIN " + pct (p.transSus) + ": the mix's low mids (250-500 Hz) are thick for " + G + "; less room ring from the kit clears them.");
+                }
+            }
+            else if (roleIs (p.role, { "Rhythm" }) && known && t.transP95 > 14.0f && zPlr > 0.5f)
+            {
+                p.transAtk = -20.0f;
+                p.why.add ("ATTACK " + pct (p.transAtk) + ": the picking jumps " + juce::String (t.transP95, 0) + " dB over the chords' body and the mix's peaks already stick out; a softer pick attack lets the guitars sit under the drums.");
+            }
+            p.transOn = std::abs (p.transAtk) >= 1.0f || std::abs (p.transSus) >= 1.0f;
+        }
+    }
+
     // 6) what The Servant gets: the 6 biggest EQ moves on its tone bands (it has 6). Anything
     //    smaller goes back to The Master's own EQ, weighted by how much of the band this track makes.
     for (size_t i = 0; i < n; ++i)
@@ -322,6 +381,8 @@ inline TracksResult planTracks (const Features& mix, const GenreProfile& g, std:
         p.params["trim"] = p.trimDb;
         p.params["deessOn"] = p.deessOn ? 1.0f : 0.0f;
         if (p.deessOn) p.params["deess"] = p.deess;
+        p.params["transOn"] = p.transOn ? 1.0f : 0.0f;
+        if (p.transOn) { p.params["transAtk"] = p.transAtk; p.params["transSus"] = p.transSus; }
         if (p.why.isEmpty()) p.why.add ("Already sits well in the mix. Nothing to change.");
     }
     res.tracks = std::move (plans);

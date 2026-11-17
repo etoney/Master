@@ -472,6 +472,38 @@ int main (int argc, char** argv)
         bool deWhy = false; for (auto& w : res.tracks[2].why) if (w.startsWith ("DE-ESS") && w.contains ("5.6 kHz")) deWhy = true;
         check (deWhy, "the reason names how far the s sounds jump and where the split is");
         check (res.tracks[0].params.at ("toneOn") == 1.0f && std::abs (res.tracks[0].params.at ("t1g") - res.tracks[0].eq[3]) < 0.01f, "the biggest move goes on The Servant's band 1");
+
+        // TRANSIENTS
+        auto withKick = tr;
+        mst::TrackInfo kick; kick.id = "k"; kick.name = "Kick In"; kick.role = "Kick"; kick.seconds = 40;
+        const double kb[10] = { 0.8, 1.0, 0.2, 0.05, 0.02, 0.01, 0.02, 0.01, 0.0, 0.0 };
+        for (int b = 0; b < 10; ++b) kick.bandPow[(size_t) b] = kb[b];
+        withKick.push_back (kick);
+        for (auto& t : withKick) t.transSeconds = 40;
+        withKick[0].transP95 = 18;   // spiky picking
+        withKick[2].transP95 = 9;    // lead
+        withKick[3].transP95 = 8;    // soft snare
+        withKick[4].transP95 = 12;   // kick
+        auto flatMix = mix; flatMix.plr = rock.stat (mst::fPlr).mean - 2.0f * rock.stat (mst::fPlr).sd;
+        auto peakyMix = mix; peakyMix.plr = rock.stat (mst::fPlr).mean + 2.0f * rock.stat (mst::fPlr).sd;
+        auto boomMix = mix; for (int b = 0; b < 3; ++b) boomMix.band[(size_t) b] = rock.stat (mst::fBand0 + b).mean + 2.0f * rock.stat (mst::fBand0 + b).sd;
+        boomMix.plr = rock.stat (mst::fPlr).mean;
+        const auto rf = mst::planTracks (flatMix, rock, withKick, {});
+        check (rf.tracks[3].transOn && rf.tracks[3].transAtk >= 15.0f && rf.tracks[4].transAtk >= 15.0f && rf.tracks[3].params.at ("transOn") == 1.0f
+               && rf.tracks[3].summary().contains ("ATTACK +"),
+               juce::String::formatted ("flat mix: snare and kick get more attack (%+.0f%%, %+.0f%%)", rf.tracks[3].transAtk, rf.tracks[4].transAtk));
+        check (! rf.tracks[0].transOn && ! rf.tracks[1].transOn && ! rf.tracks[2].transOn && rf.tracks[2].params.at ("transOn") == 0.0f, "flat mix: guitar, bass and lead left alone");
+        const auto rp = mst::planTracks (peakyMix, rock, withKick, {});
+        check (rp.tracks[0].transAtk == -20.0f && rp.tracks[3].transAtk <= 0.0f && rp.tracks[4].transAtk == 0.0f,
+               juce::String::formatted ("peaky mix: spiky picking softened (%+.0f%%), no boosts (snare %+.0f%%)", rp.tracks[0].transAtk, rp.tracks[3].transAtk));
+        auto hardSnare = withKick; hardSnare[3].transP95 = 18;
+        const auto rh = mst::planTracks (flatMix, rock, hardSnare, {});
+        check (rh.tracks[3].transAtk == 0.0f, "a snare whose hits are already hard gets no more attack");
+        const auto rb = mst::planTracks (boomMix, rock, withKick, {});
+        bool susWhy = false; for (auto& w : rb.tracks[4].why) if (w.startsWith ("SUSTAIN") && w.contains ("crowded")) susWhy = true;
+        check (rb.tracks[4].transSus == -30.0f && susWhy && rb.tracks[4].params.at ("transSus") == -30.0f, "crowded low end: the kick's boom is shortened (SUSTAIN -30%), with the reason");
+        const auto rt = mst::ChainPlan::fromVar ([&] { mst::ChainPlan c; c.valid = true; c.tracks = rb.tracks; return c.toVar(); }());
+        check (rt.tracks.size() == rb.tracks.size() && rt.tracks[4].transSus == -30.0f && rt.tracks[4].transOn, "transient plan survives save/load");
     }
 
     // ---------------- MY PROFILES: a folder of songs becomes a profile

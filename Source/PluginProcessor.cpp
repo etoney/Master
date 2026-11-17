@@ -643,6 +643,11 @@ juce::String MasterProcessor::prescribe()
             t.sibPerMin = (float) (double) sib.getProperty ("perMin", 0.0); t.sibSeconds = (float) (double) sib.getProperty ("seconds", 0.0);
             t.sibHz = (float) (double) sib.getProperty ("hz", 6500.0);
         }
+        if (auto tr = p.extra.getProperty ("trans", {}); tr.isObject())
+        {
+            t.transP95 = (float) (double) tr.getProperty ("p95", 0.0);
+            t.transSeconds = (float) (double) tr.getProperty ("seconds", 0.0);
+        }
         if (t.seconds < 1.0) continue;   // silent track (or nothing measured yet)
         tracks.push_back (t);
     }
