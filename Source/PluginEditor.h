@@ -231,6 +231,11 @@ private:
     void showProfilesMenu();
     void showMessage (const juce::String& title, const juce::String& text);
     void copyReport();
+    juce::String reportText() const;
+    void exportDiagnostics();
+public:
+    juce::String diagnosticsText() const;   // everything Castle Danger needs to tune the system, as one text file
+private:
     void setPage (int page);
     void updateVisibility();
     void runChainButton();
@@ -264,7 +269,7 @@ private:
     PilotLamp lamp;
     juce::ToggleButton listenButton { "LISTEN" };
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> listenAtt;
-    juce::TextButton resetButton { "RESET" }, profilesButton { "PROFILES" }, copyButton { "COPY" };
+    juce::TextButton resetButton { "RESET" }, profilesButton { "PROFILES" }, copyButton { "COPY" }, diagButton { "EXPORT DIAGNOSTICS" };
     GenreBar genreBar;
     SoundsLike soundsLike;
     TonalChart chart;

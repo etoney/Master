@@ -18,6 +18,10 @@ It has two pages:
             what order, on the bus and on your tracks), then sets every knob
             for you and tells you why. Five steps, shown on the left:
             LISTEN, PRESCRIBE, PLACE THE PLUGINS, APPLY, REFINE.
+  EXPORT DIAGNOSTICS (next to COPY, and on the change log)
+            Saves one text file with the report, the prescription, the
+            change log and every linked plugin's settings and measurements.
+            Send it to Castle Danger Music Company to fine-tune the system.
   ONE BUTTON on FIX IT always does the next step: PRESCRIBE, then APPLY,
             then REFINE. It says UPDATE when you've added or removed plugins
             on your tracks since the prescription.

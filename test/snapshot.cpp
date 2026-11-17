@@ -1072,6 +1072,14 @@ int main (int argc, char** argv)
         check (p.getChainStage() == 2 && ! p.chainOutdated() && bk2.sets == 1 && pme->mainButtonText() == "REFINE",
                "UPDATE plans the new BuzzKill in from the same analysis, sends its settings, and stays applied");
 
+        {
+            const auto d = pme->diagnosticsText();
+            dir.getChildFile ("diagnostics.txt").replaceWithText (d);
+            check (d.contains ("REPORT (") && d.contains ("PRESCRIPTION") && d.contains ("Dominatrix") && d.contains ("WHAT I CHANGED & WHY")
+                   && d.contains ("Lead Gtr") && d.contains ("measured: ") && d.contains ("bandPow"),
+                   juce::String::formatted ("EXPORT DIAGNOSTICS: report, prescription, change log and every track's measurements in one file (%d chars)", d.length()));
+        }
+
         // 4) REFINE from what came out
         check (p.refineChain().isNotEmpty(), "REFINE waits for a play-through");
         dom.params["outputDb"] = 2.0;   // you turned Dominatrix's OUTPUT down by hand (the fakes don't change the audio, so the mix is still quiet)

@@ -1182,6 +1182,10 @@ MasterEditor::MasterEditor (MasterProcessor& p) : AudioProcessorEditor (&p), pro
     profilesButton.onClick = [this] { showProfilesMenu(); };
     copyButton.setTooltip ("Copy the whole report as text, to paste into notes or send to someone.");
     copyButton.onClick = [this] { copyReport(); };
+    diagButton.setTooltip ("Save one text file with the report, the prescription, the change log and every linked plugin's settings and measurements: "
+                           "everything needed to fine-tune the system.");
+    diagButton.onClick = [this] { exportDiagnostics(); };
+    addAndMakeVisible (diagButton);
     for (auto* b : { &resetButton, &profilesButton }) addAndMakeVisible (*b);
 
     genreBar.setTooltip ("Which genre to compare your mix with. AUTO picks the closest match for you; the yellow lamp shows what your mix sounds like.");
@@ -1397,6 +1401,7 @@ void MasterEditor::updateVisibility()
     nextButton.setVisible (page == 0);
     fixInfo.pluginMode = chainMode;
     builtInButton.setVisible (false);
+    diagButton.setBounds (page == 0 ? juce::Rectangle<int> (868, 286, 148, 20) : juce::Rectangle<int> (920, 530, 156, 20));
     pageTabs.setLabels ({ "ANALYZE", "FIX IT WITH MY PLUGINS" });
     autoFixButton.setVisible (page == 1);
     outSel->setVisible (page == 1);
@@ -1494,6 +1499,7 @@ void MasterEditor::resized()
     chart.setBounds (28, 306, 616, 228);
     vitals.setBounds (28, 578, 616, 144);
     copyButton.setBounds (1022, 286, 54, 20);
+    diagButton.setBounds (page == 0 ? juce::Rectangle<int> (868, 286, 148, 20) : juce::Rectangle<int> (920, 530, 156, 20));
     score.setBounds (678, 306, 394, 74);
     viewport.setBounds (678, 388, 394, 334);
     verdict.setItems (report.items, viewport.getWidth() - 12);
@@ -1813,6 +1819,12 @@ void MasterEditor::showMessage (const juce::String& title, const juce::String& t
 
 void MasterEditor::copyReport()
 {
+    juce::SystemClipboard::copyTextToClipboard (reportText());
+    showMessage ("REPORT COPIED", "The full report is on your clipboard. Paste it into your notes, an email or a message.");
+}
+
+juce::String MasterEditor::reportText() const
+{
     bool saved = false;
     const auto fx = proc.getDisplayFeatures (saved);
     juce::String s;
@@ -1830,8 +1842,94 @@ void MasterEditor::copyReport()
         if (it.plugin.isNotEmpty()) s << "  -> " << it.plugin << ": " << it.tip << "\n";
         s << "\n";
     }
-    juce::SystemClipboard::copyTextToClipboard (s);
-    showMessage ("REPORT COPIED", "The full report is on your clipboard. Paste it into your notes, an email or a message.");
+    return s;
+}
+
+juce::String MasterEditor::diagnosticsText() const
+{
+    auto line = [] (const juce::String& t) { return "\n==============================================================================\n" + t + "\n==============================================================================\n"; };
+    auto json = [] (const juce::var& v) { return juce::JSON::toString (v, true); };
+    auto fmtMap = [] (const std::map<juce::String, float>& m) { juce::StringArray a; for (auto& [k, v] : m) a.add (k + "=" + juce::String (v, 2)); return a.joinIntoString (", "); };
+    const auto& cp = proc.getChainPlan();
+    const int stage = proc.getChainStage();
+    juce::String s;
+    s << "THE MASTER - DIAGNOSTICS (Castle Danger Music Company)\n";
+    s << "Version " << JucePlugin_VersionString << "   " << juce::Time::getCurrentTime().toString (true, true) << "\n";
+    s << "Host: " << juce::PluginHostType().getHostDescription() << "   " << juce::SystemStats::getOperatingSystemName()
+      << "   " << juce::String (proc.getSampleRate(), 0) << " Hz\n";
+    s << "OUTPUT: " << (proc.headroomMode() ? "-6 dB (pre-master)" : "-1 dB (finished master)") << "   Genre choice: " << proc.getGenreChoice()
+      << "   Stage: " << (stage == 0 ? "not prescribed" : stage == 1 ? "prescribed" : "applied")
+      << (proc.chainOutdated() ? " (UPDATE pending)" : "") << "\n";
+
+    s << line ("REPORT (" + juce::String (reportAfter ? "AFTER FIXES" : "YOUR MIX") + ")") << reportText();
+    {
+        bool saved = false;
+        const auto fx = proc.getDisplayFeatures (saved);
+        s << "Measurements" << (saved ? " (from the saved project)" : "") << ": " << json (fx.toVar()) << "\n";
+    }
+
+    s << line ("PRESCRIPTION");
+    if (! cp.valid) s << "(none yet)\n";
+    else
+    {
+        s << "Aimed at " << cp.genreName << " from " << mmss (cp.seconds) << " of the mix" << (cp.headroom ? ", OUTPUT -6 dB" : ", OUTPUT -1 dB") << "\n";
+        s << "Your mix as it was measured for the prescription (before any fixes): LUFS " << juce::String (cp.before.lufs, 1) << ", true peak "
+          << juce::String (cp.before.truePeak, 1) << " dBTP, PLR " << juce::String (cp.before.plr, 1) << " dB, LRA " << juce::String (cp.before.lra, 1)
+          << " LU, width " << juce::String (cp.before.width, 1) << " dB\n  " << json (cp.before.toVar()) << "\n\nMASTER BUS\n";
+        int i = 1;
+        for (auto& st : cp.steps) s << "  " << i++ << " " << st.name << ": " << st.role << "\n     " << fmtMap (st.params) << "\n";
+        s << "  " << i << " The Master (last): tone EQ " << (cp.masterEq ? "on" : "off") << " + safety limiter\n\nPLANNED CHANGES\n";
+        for (auto& c : cp.changes) s << "  [" << mst::plugDisplayName (c.plugin) << "] " << c.label << " -> " << juce::String (c.to, 2) << " " << c.unit << "   " << c.why << "\n";
+        s << "\nTRACK PLANS\n";
+        for (auto& t : cp.tracks)
+        {
+            s << "  " << mst::plugDisplayName (t.kind) << " on " << t.name << " (" << t.role << (t.share >= 0 ? ", " + juce::String (t.share * 100.0f, 1) + "% of the mix" : juce::String()) << "): " << t.summary() << "\n";
+            s << "     " << fmtMap (t.params) << "\n";
+            for (auto& w : t.why) s << "     - " << w << "\n";
+        }
+        if (! cp.adds.empty()) { s << "\nASKED TO ADD\n"; for (auto& a : cp.adds) s << "  " << mst::plugDisplayName (a.kind) << " on " << (a.track.isNotEmpty() ? a.track : juce::String ("guitar + bass tracks")) << ": " << a.why << "\n"; }
+        if (! cp.onTracks.isEmpty()) s << "\nNOTES\n  " << cp.onTracks.joinIntoString ("\n  ") << "\n";
+        if (cp.tracksNote.isNotEmpty()) s << "  " << cp.tracksNote << "\n";
+        if (! cp.cantFix.isEmpty()) s << "\nCAN'T FIX\n  " << cp.cantFix.joinIntoString ("\n  ") << "\n";
+    }
+
+    s << line ("MASTER BUS STATUS");
+    for (auto& st : proc.chainStatus())
+        s << "  " << st.name << ": " << (st.linked ? "linked" : "NOT FOUND") << ", position " << st.position << (st.orderOk ? ", order ok" : ", ORDER WRONG") << "\n";
+    s << "  order known: " << (proc.chainOrderKnown() ? "yes" : "no (play a few seconds)") << "\n";
+
+    s << line ("YOUR TRACKS");
+    for (auto& t : proc.trackStatus())
+        s << "  " << (t.name.isNotEmpty() ? t.name : juce::String ("(no name)")) << "  [" << mst::plugDisplayName (t.kind) << ", " << t.role << "]  "
+          << (t.linked ? "linked" : "NOT LINKED") << (t.planned ? ", planned" : ", not in the plan") << "  " << t.summary << "\n";
+
+    s << line ("WHAT I CHANGED & WHY");
+    if (proc.getLog().empty()) s << "(nothing applied yet)\n";
+    for (auto& e : proc.getLog())
+        s << "  [" << e.plugin << "] " << e.title << (e.confirmed ? "  (confirmed)" : "  (not confirmed)") << "\n     " << e.detail.replace ("\n", "\n     ") << "\n";
+
+    s << line ("EVERY LINKED PLUGIN: SETTINGS AND MEASUREMENTS");
+    for (auto& p : proc.getPeers())
+        s << "  " << mst::plugDisplayName (p.kind) << " " << p.version << "  id " << p.id << "\n     settings: " << json (p.params)
+          << "\n     measured: " << json (p.extra) << "\n";
+    return s;
+}
+
+void MasterEditor::exportDiagnostics()
+{
+    const auto name = "The Master diagnostics " + juce::Time::getCurrentTime().formatted ("%Y-%m-%d %H%M") + ".txt";
+    chooser = std::make_unique<juce::FileChooser> ("Export diagnostics", juce::File::getSpecialLocation (juce::File::userDesktopDirectory).getChildFile (name), "*.txt");
+    juce::Component::SafePointer<MasterEditor> safe (this);
+    const auto text = diagnosticsText();
+    chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting, [safe, text] (const juce::FileChooser& fc)
+    {
+        if (safe == nullptr || fc.getResult() == juce::File()) return;
+        const bool ok = fc.getResult().replaceWithText (text);
+        safe->showMessage (ok ? "DIAGNOSTICS SAVED" : "COULDN'T SAVE",
+                           ok ? "Saved " + fc.getResult().getFileName() + ": the report, the prescription, the change log and every track's measurements. "
+                                "Send it to Castle Danger Music Company with a note on what sounded wrong."
+                              : "Couldn't write the file there. Try your Desktop or Documents folder.");
+    });
 }
 
 void MasterEditor::showMyProfilesMenu()
