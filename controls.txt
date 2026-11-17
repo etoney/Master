@@ -59,8 +59,9 @@ REFERENCE GENRE
 -------------------------------------------------------------------------------
   AUTO      The Master works out which genre your mix sounds closest to and
             compares against that. The yellow lamp marks the match.
-  ROCK / METAL / PUNK / HARD ROCK / POP
+  ROCK / METAL / PUNK / HARD ROCK
             Lock the comparison to one genre (it's saved with the project).
+            A project saved aimed at Pop (removed in 1.11) goes back to AUTO.
 
   SOUNDS LIKE shows the closest genre and how sure the guess is (the % is
   split across all the genres, so it is NOT a score), plus the runner-up.
@@ -129,7 +130,7 @@ FIX IT WITH MY PLUGINS  (the main way: The Master sets your plugins for you)
   (automatic, offline, on your computer only).
 
   Needs Dominatrix 1.2+, Chop Shop 1.1+, The Freak 1.0+ and, for tracks,
-  The Servant 0.6+,
+  The Servant 0.7+,
   BuzzKill 2.1+, Flatliner 1.1+ and Low Blow 1.0+.
 
   OUTPUT (top of THE CURE)
@@ -191,9 +192,11 @@ FIX IT WITH MY PLUGINS  (the main way: The Master sets your plugins for you)
   the mix itself: bypass the bus plugins, RESET, play the song again, then
   press it, so The Master hears the untreated mix.
 
-  THE SERVANT ON YOUR TRACKS (The Servant 0.6 or later)
-  Put The Servant on your tracks and set each one's ROLE (Lead, Rhythm,
-  Bass, Kick, Snare, Drums, Keys / Pads, Other). Each Servant tells The
+  THE SERVANT ON YOUR TRACKS (The Servant 0.7 or later)
+  Put The Servant on your tracks and set each one's ROLE (Lead Vocal,
+  Backing Vocals, Lead Guitar, Rhythm Guitar, Bass, Kick, Snare, Drums,
+  Keys / Pads, Other). Lead Vocal and Lead Guitar are both "the lead": kept
+  on top. Backing Vocals are kept about 6 dB under the lead. Each Servant tells The
   Master what its track sends to the mix, band by band. The Master works out
   each track's real level in the mix (faders, buses and sends included) by
   comparing their level fingerprints with what it hears, and then:
@@ -204,18 +207,18 @@ FIX IT WITH MY PLUGINS  (the main way: The Master sets your plugins for you)
     LEVEL  TRIMs the lead up if it's buried (or down if it's way on top).
     COMP   compresses the tracks that make the mix's peaks, and a lead that
            jumps around. The Servant's compressor STYLE follows the role
-           (PUNCH for drums, SMOOTH for the lead, TIGHT for bass, GLUE for
+           (PUNCH for drums, SMOOTH for leads and vocals, TIGHT for bass, GLUE for
            the rest); The Master leaves a style you picked alone.
     TRANSIENTS sets The Servant's transient shaper: more ATTACK on kick and
            snare when the mix is flat or their hits are soft (more for
-           metal, less for pop; never on hits that are already hard), less
+           metal; never on hits that are already hard), less
            on snare and kit when the mix's peaks stick out, a shorter kick
            SUSTAIN when the low end is crowded (or for metal), less kit ring
            when the low mids are thick, a softer pick attack on spiky
            rhythm guitars in a peaky mix.
     DE-ESS turns on The Servant's de-esser for tracks whose "s" sounds jump
-           out (usually the lead vocal; never drums or bass), stronger for
-           pop and when the mix's bite (4-8 kHz) is already hot.
+           out (usually the lead vocal; never drums or bass), stronger when
+           the mix's bite (4-8 kHz) is already hot.
   All of it comes from the genre's MIX profile: no instrument profiles and
   no stem splitting. YOUR TRACKS lists each track once, with the plugins
   to put on it in order (e.g. 1 BUZZKILL > 2 THE SERVANT). A green lamp
@@ -237,7 +240,7 @@ FIX IT WITH MY PLUGINS  (the main way: The Master sets your plugins for you)
   order they go: BuzzKill (right after the amp sim), Flatliner, The
   Servant, then Low Blow.
     BUZZKILL   RELEASE for the genre and the part (tight for metal and punk
-               rhythm, natural for pop, gentler on leads and bass, a bit
+               rhythm, looser for rock, gentler on leads and bass, a bit
                tighter on a noisy track); HEAR REMOVED off. The mix's hum
                and the track's noise floor are given as the reasons.
     FLATLINER  TARGET at the lead's average level (so the ride doesn't

@@ -454,7 +454,7 @@ void TrackChainList::paint (juce::Graphics& g)
         auto top = r.removeFromTop (16);
         top.removeFromLeft (2);
         g.setColour (pal::paintDim); g.setFont (ledFont (10.0f));
-        g.drawText (row.role.toUpperCase(), top.removeFromRight (90).toNearestInt(), juce::Justification::centredRight);
+        g.drawFittedText (row.role.toUpperCase(), top.removeFromRight (112).toNearestInt(), juce::Justification::centredRight, 1, 0.8f);
         g.setColour (pal::paint); g.setFont (tex::stencil (13.0f).withExtraKerningFactor (0.05f));
         g.drawFittedText (row.track.toUpperCase(), top.toNearestInt(), juce::Justification::centredLeft, 1, 0.7f);
 

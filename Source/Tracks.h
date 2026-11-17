@@ -215,6 +215,32 @@ inline TracksResult planTracks (const Features& mix, const GenreProfile& g, std:
                     }
             }
         }
+        // backing vocals sit under the lead: if their 500 Hz - 4 kHz comes within about 4 dB of the
+        // lead's, pull them down so the lead stays on top
+        {
+            double leadV = 0, backV = 0;
+            for (size_t i = 0; i < n; ++i)
+                for (int bb = 4; bb <= 6; ++bb)
+                {
+                    if (roleIs (plans[i].role, { "Lead" })) leadV += c[i][(size_t) bb];
+                    else if (roleIs (plans[i].role, { "Backing" })) backV += c[i][(size_t) bb];
+                }
+            if (leadV > 0 && backV > 0)
+            {
+                const double gapDb = 10.0 * std::log10 (leadV / backV);   // how far the backing sits under the lead
+                if (gapDb < 4.0)
+                {
+                    const float t = (float) -juce::jlimit (0.0, 6.0, 6.0 - gapDb);
+                    for (auto& p : plans)
+                        if (roleIs (p.role, { "Backing" }))
+                        {
+                            p.trimDb = std::round (t * 10.0f) / 10.0f;
+                            p.why.add ("TRIM " + juce::String (p.trimDb, 1) + " dB: the backing vocals sit only " + juce::String (gapDb, 1)
+                                       + " dB under the lead in 500 Hz - 4 kHz; they should support it from about 6 dB below, not compete.");
+                        }
+                }
+            }
+        }
         double bottom = 0, rest = 0;
         for (size_t i = 0; i < n; ++i)
             for (int b = 0; b <= 1; ++b) (roleIs (plans[i].role, { "Bass", "Kick" }) ? bottom : rest) += c[i][(size_t) b];
@@ -388,7 +414,8 @@ inline TracksResult planTracks (const Features& mix, const GenreProfile& g, std:
             // The Servant's compressor STYLE follows the ROLE (AUTO); The Master leaves a style you picked alone
             juce::String st = "GLUE: gentle and slow, it just holds the part together";
             if (roleIs (p.role, { "Kick", "Snare", "Drums" })) st = "PUNCH: lets each hit's crack through, then holds the body";
-            else if (roleIs (p.role, { "Lead" }))            st = "SMOOTH: catches the loud words early and lets go slowly, like vocal levelling";
+            else if (roleIs (p.role, { "Lead Guitar" }))     st = "SMOOTH: catches the loud notes early and lets go slowly, so the solo stays even";
+            else if (roleIs (p.role, { "Lead", "Backing" })) st = "SMOOTH: catches the loud words early and lets go slowly, like vocal levelling";
             else if (roleIs (p.role, { "Bass" }))            st = "TIGHT: every note at the same level";
             p.why.add ("COMP STYLE " + st + " (AUTO, from the role).");
         }

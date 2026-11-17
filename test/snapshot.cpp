@@ -188,7 +188,7 @@ int main (int argc, char** argv)
         check (mst::ProfilePack::parse (factoryJson, factory, err), "factory pack parses " + err);
         juce::StringArray names;
         for (auto& g : factory.genres) names.add (g.name);
-        check (names.joinIntoString (",") == "Rock,Metal,Punk,Hard Rock,Pop", "factory genres: " + names.joinIntoString (", "));
+        check (names.joinIntoString (",") == "Rock,Metal,Punk,Hard Rock", "factory genres: " + names.joinIntoString (", "));
         for (auto& g : factory.genres)
         {
             float t = 0; for (int b = 0; b < mst::kNumBands; ++b) t += std::pow (10.0f, g.stat (mst::fBand0 + b).mean / 10.0f);
@@ -229,7 +229,7 @@ int main (int argc, char** argv)
         auto tmp = juce::File::createTempFile (".json");
         mst::ProfileLibrary lib;
         lib.load (factoryJson, tmp);
-        check (! lib.usingUserPack() && lib.genres().size() == 5, "library starts on the factory pack");
+        check (! lib.usingUserPack() && lib.genres().size() == 4, "library starts on the factory pack");
         auto fx = meansOf (lib.genres()[(size_t) lib.indexOf ("metal")]);
         fx.lufs = -6.0f;
         check (lib.addReference ("metal", fx).isEmpty() && tmp.existsAsFile() && lib.usingUserPack(), "admin capture writes the user pack");
@@ -241,19 +241,19 @@ int main (int argc, char** argv)
         // an imported pack can add a genre
         mst::ProfilePack extra;
         extra.packVersion = "test";
-        auto country = factory.genres[4];
+        auto country = factory.genres[3];
         country.id = "country"; country.name = "Country"; country.tracks = 12; country.source = "references";
         extra.genres.push_back (country);
         auto packFile = juce::File::createTempFile (".json");
         packFile.replaceWithText (extra.toJson());
-        check (lib.importPack (packFile).isEmpty() && lib.indexOf ("country") == 5 && lib.genres().size() == 6, "import adds a new genre (Country)");
+        check (lib.importPack (packFile).isEmpty() && lib.indexOf ("country") == 4 && lib.genres().size() == 5, "import adds a new genre (Country)");
         check (lib.genres()[(size_t) lib.indexOf ("metal")].tracks == 0, "import replaces the previous user pack");
         auto exported = juce::File::createTempFile (".json");
-        check (lib.exportPack (exported, "x").isEmpty() && [&] { mst::ProfilePack p; juce::String e; return mst::ProfilePack::parse (exported.loadFileAsString(), p, e) && p.genres.size() == 6; }(),
+        check (lib.exportPack (exported, "x").isEmpty() && [&] { mst::ProfilePack p; juce::String e; return mst::ProfilePack::parse (exported.loadFileAsString(), p, e) && p.genres.size() == 5; }(),
                "export writes every genre");
         packFile.replaceWithText ("garbage");
-        check (lib.importPack (packFile).isNotEmpty() && lib.genres().size() == 6, "a broken file is refused and nothing changes");
-        check (lib.restoreFactory().isEmpty() && ! tmp.existsAsFile() && lib.genres().size() == 5, "restore factory");
+        check (lib.importPack (packFile).isNotEmpty() && lib.genres().size() == 5, "a broken file is refused and nothing changes");
+        check (lib.restoreFactory().isEmpty() && ! tmp.existsAsFile() && lib.genres().size() == 4, "restore factory");
         packFile.deleteFile(); exported.deleteFile();
     }
 
@@ -426,7 +426,7 @@ int main (int argc, char** argv)
         std::vector<float> mixS (T, 0.0f);
         std::vector<mst::TrackInfo> tr (4);
         const char* names[] = { "Rhythm Gtr", "Bass DI", "Lead Vox", "Snare" };
-        const char* roles[] = { "Rhythm", "Bass", "Lead", "Snare" };
+        const char* roles[] = { "Rhythm Guitar", "Bass", "Lead Vocal", "Snare" };   // The Servant 0.7 role names
         const double bp[4][10] = { { 0.01, 0.05, 0.4, 1.0, 0.5, 0.3, 0.2, 0.05, 0.01, 0.005 },
                                    { 0.6, 1.0, 0.3, 0.1, 0.03, 0.01, 0.005, 0.001, 0.0, 0.0 },
                                    { 0.0, 0.005, 0.03, 0.05, 0.06, 0.07, 0.05, 0.02, 0.01, 0.005 },
@@ -474,6 +474,22 @@ int main (int argc, char** argv)
         bool deWhy = false; for (auto& w : res.tracks[2].why) if (w.startsWith ("DE-ESS") && w.contains ("5.6 kHz")) deWhy = true;
         check (deWhy, "the reason names how far the s sounds jump and where the split is");
         check (res.tracks[0].params.at ("toneOn") == 1.0f && std::abs (res.tracks[0].params.at ("t1g") - res.tracks[0].eq[3]) < 0.01f, "the biggest move goes on The Servant's band 1");
+
+        // BACKING VOCALS: sit under the lead, SMOOTH, de-essable
+        {
+            auto withBv = tr;
+            mst::TrackInfo bv = tr[2]; bv.id = "bv"; bv.name = "Backing Vox"; bv.role = "Backing Vocals";
+            for (auto& v : bv.bandPow) v *= 0.8;   // almost as present as the lead
+            for (auto& v : bv.series) v *= 0.8f;
+            withBv.push_back (bv);
+            const auto rb = mst::planTracks (mix, rock, withBv, {});
+            const auto& b = rb.tracks.back();
+            bool why = false; for (auto& w : b.why) if (w.startsWith ("TRIM") && w.contains ("under the lead")) why = true;
+            check (b.role == "Backing Vocals" && b.trimDb <= -2.0f && why,
+                   juce::String::formatted ("backing vocals that compete with the lead are pulled under it (TRIM %+.1f dB)", b.trimDb));
+            bool leadUp = rb.tracks[2].trimDb >= 0.0f;
+            check (leadUp, "the lead vocal isn't turned down for the backing vocals");
+        }
 
         // TRANSIENTS
         auto withKick = tr;
@@ -577,7 +593,7 @@ int main (int argc, char** argv)
     // ---------------- The Freak: which ranges jump around, and the bands it gets
     {
         auto byId = [&] (const char* id) -> const mst::GenreProfile& { for (auto& g : factory.genres) if (g.id == id) return g; return factory.genres[0]; };
-        const auto& pop = byId ("pop");
+        const auto& pop = byId ("rock");   // (no Pop profile any more: Castle Danger doesn't do pop)
         auto pinkMix = [] (bool bursts)
         {
             auto pk = std::make_shared<std::array<Pink, 2>>();
@@ -662,16 +678,16 @@ int main (int argc, char** argv)
     {
         auto byId = [&] (const char* id) -> const mst::GenreProfile& { for (auto& g : factory.genres) if (g.id == id) return g; return factory.genres[0]; };
         const auto& metal = byId ("metal");
-        const auto& pop = byId ("pop");
-        check (metal.id == "metal" && pop.id == "pop", "factory has metal and pop");
+        const auto& pop = byId ("rock");
+        check (metal.id == "metal" && pop.id == "rock", "factory has metal and rock");
         mst::Features mix = meansOf (metal); mix.humHz = 60; mix.humSeconds = 4.0f;
         auto ex = [] (std::initializer_list<std::pair<const char*, juce::var>> kv) { auto* o = new juce::DynamicObject(); for (auto& [k, v] : kv) o->setProperty (k, v); return juce::var (o); };
         mst::HelperInfo bk { "b1", "buzzkill", "Rhythm Gtr", "Rhythm", ex ({ { "floorDb", -62.0 }, { "playDb", -20.0 }, { "seconds", 30.0 }, { "learned", true } }) };
         auto bm = mst::planBuzzKill (bk, mix, metal);
         auto bmLead = mst::planBuzzKill ({ "b2", "buzzkill", "Lead Gtr", "Lead", bk.extra }, mix, metal);
         auto bp = mst::planBuzzKill (bk, mix, pop);
-        check (bm.params.at ("release") >= 0.75f && bp.params.at ("release") <= 0.4f && bmLead.params.at ("release") < bm.params.at ("release"),
-               juce::String::formatted ("BuzzKill RELEASE: tight for metal rhythm (%.2f), gentler on a metal lead (%.2f), natural for pop (%.2f)",
+        check (bm.params.at ("release") >= 0.75f && bp.params.at ("release") <= 0.5f && bmLead.params.at ("release") < bm.params.at ("release"),
+               juce::String::formatted ("BuzzKill RELEASE: tight for metal rhythm (%.2f), gentler on a metal lead (%.2f), looser for rock (%.2f)",
                                         bm.params.at ("release"), bmLead.params.at ("release"), bp.params.at ("release")));
         check (bm.params.at ("listen") == 0.0f && bm.why.joinIntoString (" ").contains ("60 Hz hum"), "BuzzKill: HEAR REMOVED off, and the mix's hum is the reason");
         auto noisy = bk; noisy.extra = ex ({ { "floorDb", -45.0 }, { "playDb", -20.0 }, { "seconds", 30.0 }, { "learned", true } });
@@ -680,8 +696,8 @@ int main (int argc, char** argv)
         mst::HelperInfo fl { "f1", "flatliner", "Lead Vox", "Lead", ex ({ { "p10", -34.0 }, { "p50", -22.0 }, { "p90", -14.0 }, { "floorDb", -70.0 }, { "seconds", 60.0 } }) };
         auto fp = mst::planFlatliner (fl, pop);
         auto fm = mst::planFlatliner (fl, byId ("punk"));
-        check (std::abs (fp.params.at ("target") + 22.0f) < 0.01f && fp.params.at ("range") >= 12.0f - 0.01f && fm.params.at ("range") < fp.params.at ("range"),
-               juce::String::formatted ("Flatliner: TARGET at the lead's average (%.1f), RANGE from its 20 dB swing (pop %.0f, punk %.0f)",
+        check (std::abs (fp.params.at ("target") + 22.0f) < 0.01f && fp.params.at ("range") >= 10.0f && fm.params.at ("range") < fp.params.at ("range"),
+               juce::String::formatted ("Flatliner: TARGET at the lead's average (%.1f), RANGE from its 20 dB swing (rock %.0f, punk %.0f)",
                                         fp.params.at ("target"), fp.params.at ("range"), fm.params.at ("range")));
         check (fp.params.at ("gate") < -34.0f + 0.01f && fp.params.at ("gate") > -70.0f && fp.params.at ("ride") == 1.0f,
                juce::String::formatted ("Flatliner GATE between the gaps and the quietest words (%.0f dB)", fp.params.at ("gate")));

@@ -2,7 +2,7 @@
   "format": "the-master-profiles",
   "formatVersion": 1,
   "analyzerVersion": 1,
-  "packVersion": "2026.11.15-seed",
+  "packVersion": "2026.11.17",
   "notes": "Seed estimates of commercial masters per genre. Rebuild with TheMasterProfiler from real reference songs (see ADMIN.txt).",
   "genres": [
     {
@@ -289,78 +289,6 @@
         },
         "air": {
           "mean": -32.94,
-          "sd": 2.5
-        }
-      }
-    },
-    {
-      "id": "pop",
-      "name": "Pop",
-      "tracks": 0,
-      "source": "seed",
-      "features": {
-        "lufs": {
-          "mean": -8.0,
-          "sd": 1.5
-        },
-        "plr": {
-          "mean": 8.5,
-          "sd": 1.5
-        },
-        "lra": {
-          "mean": 5.5,
-          "sd": 2.0
-        },
-        "width": {
-          "mean": -9.0,
-          "sd": 3.0
-        },
-        "correlation": {
-          "mean": 0.75,
-          "sd": 0.1
-        },
-        "lowCorrelation": {
-          "mean": 0.95,
-          "sd": 0.04
-        },
-        "sub": {
-          "mean": -4.45,
-          "sd": 2.5
-        },
-        "bass": {
-          "mean": -4.75,
-          "sd": 2.5
-        },
-        "low": {
-          "mean": -8.25,
-          "sd": 2.5
-        },
-        "lowMid": {
-          "mean": -11.45,
-          "sd": 2.5
-        },
-        "mid": {
-          "mean": -13.95,
-          "sd": 2.5
-        },
-        "upperMid": {
-          "mean": -16.45,
-          "sd": 2.5
-        },
-        "presence": {
-          "mean": -18.95,
-          "sd": 2.5
-        },
-        "bite": {
-          "mean": -21.95,
-          "sd": 2.5
-        },
-        "sheen": {
-          "mean": -27.45,
-          "sd": 2.5
-        },
-        "air": {
-          "mean": -31.95,
           "sd": 2.5
         }
       }
