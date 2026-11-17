@@ -234,7 +234,9 @@ FIX IT WITH MY PLUGINS  (the main way: The Master sets your plugins for you)
            Up to 6 moves per track (The Servant's 6 tone bands).
     LEVEL  TRIMs the lead up if it's buried (or down if it's way on top).
     COMP   compresses the tracks that make the mix's peaks, and a lead that
-           jumps around.
+           jumps around. The Servant's compressor STYLE follows the role
+           (PUNCH for drums, SMOOTH for the lead, TIGHT for bass, GLUE for
+           the rest); The Master leaves a style you picked alone.
     TRANSIENTS sets The Servant's transient shaper: more ATTACK on kick and
            snare when the mix is flat or their hits are soft (more for
            metal, less for pop; never on hits that are already hard), less

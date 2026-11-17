@@ -383,6 +383,15 @@ inline TracksResult planTracks (const Features& mix, const GenreProfile& g, std:
         if (p.deessOn) p.params["deess"] = p.deess;
         p.params["transOn"] = p.transOn ? 1.0f : 0.0f;
         if (p.transOn) { p.params["transAtk"] = p.transAtk; p.params["transSus"] = p.transSus; }
+        if (p.compOn)
+        {
+            // The Servant's compressor STYLE follows the ROLE (AUTO); The Master leaves a style you picked alone
+            juce::String st = "GLUE: gentle and slow, it just holds the part together";
+            if (roleIs (p.role, { "Kick", "Snare", "Drums" })) st = "PUNCH: lets each hit's crack through, then holds the body";
+            else if (roleIs (p.role, { "Lead" }))            st = "SMOOTH: catches the loud words early and lets go slowly, like vocal levelling";
+            else if (roleIs (p.role, { "Bass" }))            st = "TIGHT: every note at the same level";
+            p.why.add ("COMP STYLE " + st + " (AUTO, from the role).");
+        }
         if (p.why.isEmpty()) p.why.add ("Already sits well in the mix. Nothing to change.");
     }
     res.tracks = std::move (plans);

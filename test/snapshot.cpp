@@ -461,6 +461,8 @@ int main (int argc, char** argv)
         check (res.tracks[1].eq[0] >= 0.0f && res.tracks[1].eq[1] >= 0.0f, juce::String::formatted ("the bass keeps its low end (sub %+.1f, bass %+.1f dB)", res.tracks[1].eq[0], res.tracks[1].eq[1]));
         check (res.tracks[2].trimDb > 0.5f, juce::String::formatted ("the buried lead gets turned up (TRIM %+.1f dB)", res.tracks[2].trimDb));
         check (res.tracks[3].compOn && ! res.tracks[0].compOn, juce::String::formatted ("the snare that makes the peaks gets compressed (%.0f%%), the guitar doesn't", res.tracks[3].comp));
+        bool punchWhy = false; for (auto& w : res.tracks[3].why) if (w.startsWith ("COMP STYLE PUNCH")) punchWhy = true;
+        check (punchWhy && res.tracks[3].params.count ("compStyle") == 0, "the snare's compressor reason names its style (PUNCH); The Master leaves STYLE on AUTO");
         check (! res.tracks[0].why.isEmpty() && res.tracks[0].why[0].contains ("% of the mix"), "every track's changes come with reasons");
         bool maxSix = true;
         for (auto& tp : res.tracks) { int k = 0; for (auto v : tp.eq) if (std::abs (v) >= 0.5f) ++k; maxSix = maxSix && k <= 6; }
