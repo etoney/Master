@@ -152,7 +152,9 @@ THE FIX  (The Master sets your plugins for you)
     loudness part from the same analysis (no need to play the song again)
     and sends the new settings. Projects made before 1.7 open on -1 dB.
 
-  1. Play the whole song with only The Master on the master bus.
+  1. Set up: The Servant on every track (ROLE set), The Master last on
+     the master bus and nothing else there. RESET, then play the whole song.
+     The report's first line counts the Servants listening.
   2. GO TO FIX (the big button) prescribes straight away; if it hadn't heard
      enough yet, keep playing and press PRESCRIBE. THE PRESCRIPTION lists
      the chain, in order, for example:

@@ -1505,7 +1505,8 @@ void MasterEditor::runNextButton()
     const auto heard = proc.getDisplayFeatures (fromSaved);
     if (stage == 0 && ! (heard.valid && heard.seconds >= 20.0))
     {
-        showMessage ("PLAY YOUR SONG", "Press RESET, then play your song from the top (the whole song is best). The report fills in as it plays; "
+        showMessage ("PLAY YOUR SONG", "Put The Servant on every track (with its ROLE set) first, so it listens along. Then press RESET and play your song "
+                                       "from the top (the whole song is best). The report fills in as it plays; "
                                        "after 20 seconds this button says GO TO FIX.");
         return;
     }
@@ -1709,6 +1710,27 @@ void MasterEditor::updateReport()
     const auto fx = reportAfter ? post : pre;
     if (reportAfter) saved = false;
     report = mst::advise (fx, gp, proc.headroomMode());
+    // set-up first: The Servants have to hear the same play-through as The Master, so they go on before you play
+    if (proc.getChainStage() == 0 && ! reportAfter)
+    {
+        int servants = 0;
+        for (auto& pr : proc.getPeers()) if (pr.kind == "servant") ++servants;
+        mst::Suggestion su;
+        su.sev = mst::Sev::info; su.area = "SET-UP";
+        if (servants == 0)
+        {
+            su.title = "PUT THE SERVANT ON EVERY TRACK";
+            su.body = "Before you play the song: The Master on the master bus (last), The Servant on every track, each with its ROLE set. "
+                      "The Servants listen along with The Master, so one play-through is enough for the whole prescription.";
+            su.plugin = "THE SERVANT"; su.tip = "Insert it on each track, set ROLE, then press RESET here and play the song from the top.";
+        }
+        else
+        {
+            su.title = juce::String (servants) + (servants == 1 ? " SERVANT LISTENING" : " SERVANTS LISTENING");
+            su.body = "Every track with The Servant is being heard along with the mix. Missing one? Add it now, then RESET and play again.";
+        }
+        report.items.insert (report.items.begin(), su);
+    }
 
     // FIX IT page: scores, the plan's reasons, AUTO markers
     {
@@ -1860,7 +1882,8 @@ void MasterEditor::timerCallback()
             const auto heard = proc.getDisplayFeatures (fromSaved);
             const auto t = mmss (heard.seconds);
             juce::StringArray d;
-            d.add ("Press RESET, then play your song from the top (" + t + " heard so far). The whole song is best.");
+            d.add ("The Servant on every track (ROLE set), The Master last on the master bus. Then RESET and play your song from the top ("
+                   + t + " heard so far). The whole song is best.");
             d.add (t + " heard. Press PRESCRIBE (top right) and The Master picks your plugins and every setting.");
             d.add ("Put the plugins where the lists show: the master bus in that order, and the tracks under YOUR TRACKS. "
                    + juce::String (linked) + " of " + juce::String ((int) chainView.steps.size()) + " bus plugins linked"
