@@ -1,6 +1,7 @@
 #pragma once
-// THE MASTER - the other Castle Danger plugins on your tracks: BUZZKILL (noise / hum) and
-// FLATLINER (rides a lead that jumps around). Each one reports what it hears on its own track;
+// THE MASTER - the other Castle Danger plugins on your tracks: BUZZKILL (noise / hum), FLATLINER
+// (rides a lead that jumps around), LOW BLOW (kick/bass ducker), CHOP SHOP (clips drum peaks at the
+// source) and DOMINATRIX (saturates a thin bass). Each one reports what it hears on its own track;
 // The Master sets it from that, from the track's ROLE (its Servant's) and from the genre.
 #include "Tracks.h"
 
@@ -234,6 +235,87 @@ inline TrackPlan planLowBlow (const HelperInfo& h, const LowClash& clash, const 
         p.why.add ("Low Blow hears no kick on its sidechain yet. Send the kick track to Low Blow's sidechain input (in Studio Pro: the sidechain button in Low Blow's window). Until then it leaves the bass alone.");
     p.note = "DEPTH -" + juce::String (depth, 0) + " dB  //  " + juce::String (juce::roundToInt (xo)) + " Hz  //  REL " + juce::String (juce::roundToInt (release)) + " ms"
            + (side ? juce::String() : juce::String ("  //  NO KICK ON SIDECHAIN"));
+    return p;
+}
+
+//------------------------------------------------------------------------------
+// CHOP SHOP ON A DRUM TRACK: clip the hits that make the mix's peaks at the source. A clipper shaves
+// the spike off each hit and keeps the punch, where a compressor softens it; The Servant's
+// compressor on that track is switched off so the two don't double up.
+inline bool wantsDrumClip (const TrackPlan& sv)
+{
+    return sv.kind == "servant" && sv.compOn && roleIs (sv.role, { "Kick", "Snare", "Drums" });
+}
+
+inline TrackPlan planTrackChop (const HelperInfo& h, const TrackInfo* t, const GenreProfile& g)
+{
+    auto p = makeHelperPlan (h, "Drum track");
+    const bool kit = roleIs (h.role, { "Drums" });
+    const auto G = genreKey (g);
+    const double peak = h.extra.getProperty ("songPeakDb", -100.0);
+    const double secs = h.extra.getProperty ("seconds", 0.0);
+    if (secs < 5.0 || peak <= -90.0)
+    {
+        p.why.add ("Chop Shop on this track hasn't heard the song yet: press RESET on The Master, play the song, then UPDATE.");
+        p.note = "NOT HEARD YET";
+        return p;
+    }
+    float shave = 3.0f;
+    juce::String shaveWhy = "a typical shave for a drum track";
+    if (t != nullptr && t->transSeconds >= 5.0f)
+    {
+        shave = juce::jlimit (2.0f, 6.0f, std::round (t->transP95 * 0.3f * 2.0f) / 2.0f);
+        shaveWhy = "its hits stick out " + juce::String (t->transP95, 0) + " dB over its body";
+    }
+    if (G == "metal" || G == "punk") { shave = std::min (6.0f, shave + 1.0f); shaveWhy << ", a little deeper for " << g.name; }
+    const float ceiling = juce::jlimit (-24.0f, 0.0f, std::round ((float) (peak - shave) * 10.0f) / 10.0f);
+
+    p.params["mode"] = 0.0f; p.params["shape"] = kit ? 1.0f : 0.0f; p.params["inputDb"] = 0.0f; p.params["ceilingDb"] = ceiling;
+    p.params["color"] = 0.0f; p.params["mix"] = 100.0f; p.params["outputDb"] = 0.0f; p.params["oversample"] = 1.0f;
+    p.params["gainMatch"] = 0.0f; p.params["scraps"] = 0.0f;
+
+    p.why.add ("CEILING " + juce::String (ceiling, 1) + " dB: " + juce::String (shave, 1) + " dB under this track's loudest hit (" + juce::String (peak, 1)
+               + " dBFS), because " + shaveWhy + ". Only the spikes are shaved.");
+    p.why.add (kit ? "SHAPE SOFT: rounds the hits of a full kit, so cymbals don't crunch."
+                   : "SHAPE HARD: a clean, flat cut keeps the crack of each hit.");
+    p.why.add ("MODE MASTER, COLOR 0: transparent; nothing below the ceiling changes. OVERSAMPLING 2x keeps it clean without much CPU.");
+    p.why.add ("The Servant's compressor on this track is off: Chop Shop handles its peaks, with more punch than compressing them.");
+    p.note = "CEILING " + juce::String (ceiling, 1) + " dB  //  SHAVES " + juce::String (shave, 1) + " dB  //  " + (kit ? "SOFT" : "HARD");
+    return p;
+}
+
+//------------------------------------------------------------------------------
+// DOMINATRIX ON THE BASS: a bass whose 250 Hz - 2 kHz is thin all but disappears on phones and small
+// speakers. Saturation adds the harmonics that let it be heard there, without changing its level.
+inline float bassHarmonicsDb (const TrackInfo& t)
+{
+    const double low = t.bandPow[0] + t.bandPow[1], harm = t.bandPow[3] + t.bandPow[4] + t.bandPow[5];
+    if (low <= 1e-12) return 0.0f;
+    return (float) (10.0 * std::log10 (std::max (harm, 1e-12) / low));
+}
+constexpr float kThinBassDb = -10.0f;   // below this the bass needs harmonics to be heard on small speakers
+
+inline TrackPlan planTrackDom (const HelperInfo& h, const TrackInfo* t, const GenreProfile& g)
+{
+    auto p = makeHelperPlan (h, "Bass track");
+    const auto G = genreKey (g);
+    const bool heavy = G == "metal" || G == "punk" || G == "hardrock";
+    float sat = 25.0f;
+    juce::String why = "no Servant measurement on this track, so a moderate amount";
+    if (t != nullptr)
+    {
+        const float hd = bassHarmonicsDb (*t);
+        sat = juce::jlimit (15.0f, 45.0f, std::round (25.0f + (kThinBassDb - hd) * 3.0f));
+        why = "its 250 Hz - 2 kHz sits " + juce::String (-hd, 1) + " dB under its lows" + (hd < kThinBassDb ? juce::String (", thin on small speakers") : juce::String (", already fairly audible"));
+    }
+    p.params["discipline"] = 0.0f; p.params["saturation"] = sat; p.params["satType"] = heavy ? 4.0f : 1.0f; p.params["analog"] = 0.0f;
+    p.params["mix"] = 100.0f; p.params["width"] = 100.0f; p.params["bassMono"] = 0.0f; p.params["outputDb"] = 0.0f;
+    p.params["ceiling"] = 2.0f; p.params["quality"] = 1.0f; p.params["match"] = 1.0f;
+    p.why.add ("SATURATION " + juce::String (juce::roundToInt (sat)) + "% " + (heavy ? "WHIP" : "TUBE") + ": " + why + ". "
+               + (heavy ? "WHIP adds the bite heavy bass needs to cut through guitars." : "TUBE adds warm, even harmonics."));
+    p.why.add ("DISCIPLINE 0, CEILING OFF: no compression or clipping here (The Servant compresses the bass).");
+    p.why.add ("MATCH ON: the level stays the same, so the mix balance doesn't move.");
+    p.note = "SAT " + juce::String (juce::roundToInt (sat)) + "% " + (heavy ? "WHIP" : "TUBE") + "  //  MATCH ON";
     return p;
 }
 } // namespace mst

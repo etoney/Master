@@ -705,6 +705,32 @@ int main (int argc, char** argv)
         check (mst::planFlatliner (steady, pop).params.at ("range") == 3.0f, "Flatliner: a steady lead gets only a gentle ride");
         auto fresh = fl; fresh.extra = ex ({ { "seconds", 1.0 } });
         check (mst::planFlatliner (fresh, pop).params.empty(), "Flatliner: nothing is set until it has heard the song");
+        // CHOP SHOP on a drum track, DOMINATRIX on a thin bass
+        {
+            mst::TrackInfo snare; snare.name = "Snare"; snare.role = "Snare"; snare.transP95 = 10.0f; snare.transSeconds = 30.0f;
+            mst::HelperInfo cs { "c1", "chopshop", "Snare", "Snare", ex ({ { "track", "Snare" }, { "songPeakDb", -6.0 }, { "seconds", 30.0 } }) };
+            const auto c = mst::planTrackChop (cs, &snare, byId ("rock"));
+            check (std::abs (c.params.at ("ceilingDb") + 9.0f) < 0.01f && c.params.at ("shape") == 0.0f && c.params.at ("mode") == 0.0f && c.params.at ("oversample") == 1.0f,
+                   juce::String::formatted ("Chop Shop on the snare: ceiling 3 dB under its loudest hit (%.1f), HARD, MASTER mode, 2x", c.params.at ("ceilingDb")));
+            auto kitH = cs; kitH.role = "Drums";
+            const auto ck = mst::planTrackChop (kitH, &snare, metal);
+            check (ck.params.at ("shape") == 1.0f && ck.params.at ("ceilingDb") < c.params.at ("ceilingDb"), "a full kit gets a SOFT knee; metal shaves a little deeper");
+            auto fresh = cs; fresh.extra = ex ({ { "track", "Snare" }, { "seconds", 0.0 } });
+            check (mst::planTrackChop (fresh, &snare, byId ("rock")).params.empty(), "Chop Shop: nothing is set until it has heard the song");
+            mst::TrackPlan sv; sv.kind = "servant"; sv.role = "Snare"; sv.compOn = true;
+            mst::TrackPlan gt = sv; gt.role = "Rhythm Guitar";
+            check (mst::wantsDrumClip (sv) && ! mst::wantsDrumClip (gt), "a clipper is wanted on drum tracks The Master would compress for the peaks, not on guitars");
+
+            mst::TrackInfo bass; bass.name = "Bass DI"; bass.role = "Bass";
+            const double bb[10] = { 0.6, 1.0, 0.3, 0.1, 0.03, 0.01, 0.005, 0.001, 0.0, 0.0 };
+            for (int k = 0; k < 10; ++k) bass.bandPow[(size_t) k] = bb[k];
+            mst::HelperInfo dh { "d1", "dominatrix", "Bass DI", "Bass", ex ({ { "track", "Bass DI" } }) };
+            const auto dm = mst::planTrackDom (dh, &bass, metal), dr = mst::planTrackDom (dh, &bass, byId ("rock"));
+            check (mst::bassHarmonicsDb (bass) < mst::kThinBassDb && dm.params.at ("satType") == 4.0f && dr.params.at ("satType") == 1.0f
+                   && dm.params.at ("discipline") == 0.0f && dm.params.at ("ceiling") == 2.0f && dm.params.at ("match") == 1.0f && dm.params.at ("saturation") > 25.0f,
+                   juce::String::formatted ("Dominatrix on a thin bass (%.1f dB): WHIP for metal, TUBE for rock, %.0f%% saturation, no comp, no clipper, MATCH on",
+                                            mst::bassHarmonicsDb (bass), dm.params.at ("saturation")));
+        }
         mst::ChainPlan cp; cp.valid = true; cp.tracks = { bm, fp };
         auto rt = mst::ChainPlan::fromVar (juce::JSON::parse (juce::JSON::toString (cp.toVar())));
         check (rt.tracks.size() == 2 && rt.tracks[0].kind == "buzzkill" && rt.tracks[1].summary() == fp.summary() && rt.tracks[1].params.at ("range") == fp.params.at ("range"),
@@ -1087,6 +1113,39 @@ int main (int argc, char** argv)
         pme->refreshNow();
         check (p.getChainStage() == 2 && ! p.chainOutdated() && bk2.sets == 1 && pme->mainButtonText() == "REFINE",
                "UPDATE plans the new BuzzKill in from the same analysis, sends its settings, and stays applied");
+
+        // 3c) a Chop Shop on a track (its DAW track name matches a Servant) is a track plugin, not the bus one
+        Fake chop2 { "chopshop", { { "ceilingDb", 0 }, { "mode", 0 }, { "shape", 0 } } };
+        chop2.ep = std::make_unique<cdlink::Endpoint> ("chopshop", [&chop2] (const juce::var& m)
+        {
+            if (m.getProperty ("type", "").toString() != "set") return;
+            chop2.lastSet = m; ++chop2.sets;
+            if (auto* o = m.getProperty ("params", {}).getDynamicObject()) for (auto& pr : o->getProperties()) chop2.params[pr.name.toString()] = (double) pr.value;
+            auto r = cdlink::Endpoint::makeMessage ("applied");
+            r->setProperty ("params", m.getProperty ("params", {}));
+            chop2.ep->send (r, m.getProperty ("from", "").toString());
+        }, other);
+        const auto chop2X = plainExtra ({ { "track", "Rhythm Gtr" }, { "songPeakDb", -4.0 }, { "seconds", 30.0 } });
+        struct Pinger4 : juce::Timer { std::function<void()> f; void timerCallback() override { f(); } } chop2Pinger;
+        chop2Pinger.f = [&] { auto m = cdlink::Endpoint::makeMessage ("status"); m->setProperty ("extra", chop2X);
+                              auto* po = new juce::DynamicObject(); for (auto& [k, v] : chop2.params) po->setProperty (k, v);
+                              m->setProperty ("params", juce::var (po)); chop2.ep->send (m); };
+        chop2Pinger.startTimer (250);
+        juce::String chop2Id;
+        for (int i = 0; i < 30 && chop2Id.isEmpty(); ++i) { pump (50); for (auto& pr : p.getPeers()) if (pr.kind == "chopshop" && pr.extra.getProperty ("track", "").toString() == "Rhythm Gtr") chop2Id = pr.id; }
+        {
+            bool busChopStill = false;
+            for (auto& st : p.chainStatus()) if (st.kind == "chopshop") busChopStill = st.linked && st.peerId != chop2Id;
+            check (chop2Id.isNotEmpty() && p.isTrackPeer (chop2Id) && busChopStill && p.chainOutdated(),
+                   "a Chop Shop on a track is a track plugin: the bus Chop Shop stays the bus one, and the main button says UPDATE");
+            pme->refreshNow();
+            pme->pressAutoFix();
+            for (int i = 0; i < 80 && chop2.sets == 0; ++i) pump (50);
+            const mst::TrackPlan* tc = nullptr;
+            for (auto& t : p.getChainPlan().tracks) if (t.kind == "chopshop") tc = &t;
+            check (tc != nullptr && tc->name == "Rhythm Gtr" && chop2.sets == 1 && std::abs (chop2.params["ceilingDb"] - tc->params.at ("ceilingDb")) < 0.01,
+                   juce::String::formatted ("UPDATE plans the track Chop Shop and sends it its ceiling (%.1f dB)", chop2.params["ceilingDb"]));
+        }
 
         {
             const auto d = pme->diagnosticsText();

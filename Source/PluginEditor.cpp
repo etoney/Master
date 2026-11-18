@@ -421,12 +421,15 @@ void StepList::paint (juce::Graphics& g)
 //==============================================================================
 static int plugOrder (const juce::String& kind)
 {
-    // BuzzKill right after the amp sim, Flatliner before the levelling, The Servant, then Low Blow's duck last
+    // BuzzKill right after the amp sim, Flatliner before the levelling, The Servant, then Dominatrix's
+    // saturation (bass) or Chop Shop's clip (drums), and Low Blow's duck last
     if (kind == "buzzkill") return 0;
     if (kind == "flatliner") return 1;
     if (kind == "servant") return 2;
-    if (kind == "lowblow") return 3;
-    return 4;
+    if (kind == "dominatrix") return 3;
+    if (kind == "chopshop") return 4;
+    if (kind == "lowblow") return 5;
+    return 6;
 }
 
 void TrackChainList::setRows (std::vector<Row> r, int width)

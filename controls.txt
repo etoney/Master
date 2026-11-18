@@ -129,7 +129,7 @@ FIX IT WITH MY PLUGINS  (the main way: The Master sets your plugins for you)
   the master bus, then sets their controls for you over Castle Danger Link
   (automatic, offline, on your computer only).
 
-  Needs Dominatrix 1.2+, Chop Shop 1.1+, The Freak 1.0+ and, for tracks,
+  Needs Dominatrix 1.3+, Chop Shop 1.2+, The Freak 1.0+ and, for tracks,
   The Servant 0.7+,
   BuzzKill 2.1+, Flatliner 1.1+ and Low Blow 1.0+.
 
@@ -238,7 +238,7 @@ FIX IT WITH MY PLUGINS  (the main way: The Master sets your plugins for you)
   one is on (by track name, or by matching it to that track's Servant).
   They show under YOUR TRACKS in the row of the track they're on, in the
   order they go: BuzzKill (right after the amp sim), Flatliner, The
-  Servant, then Low Blow.
+  Servant, Dominatrix, Chop Shop, then Low Blow.
     BUZZKILL   RELEASE for the genre and the part (tight for metal and punk
                rhythm, looser for rock, gentler on leads and bass, a bit
                tighter on a noisy track); HEAR REMOVED off. The mix's hum
@@ -247,6 +247,19 @@ FIX IT WITH MY PLUGINS  (the main way: The Master sets your plugins for you)
                change the balance), RANGE from how much the lead swings and
                the genre, SPEED and GATE. A lead Flatliner rides doesn't
                also get The Servant's compressor for its jumps.
+    CHOP SHOP  on a kick, snare or drum track whose hits make the mix's
+               peaks (Chop Shop 1.2+). CEILING a few dB under that track's
+               loudest hit (deeper the more its hits stick out), MASTER mode,
+               HARD knee (SOFT on a full kit), 2x. That track's Servant
+               compressor is turned off: the clipper takes the peaks, with
+               more punch. Asked for (red, ADD IT) when such a track has none.
+    DOMINATRIX on a bass whose 250 Hz - 2 kHz is thin, so it disappears on
+               phones and small speakers (Dominatrix 1.3+). Saturation only:
+               TUBE for rock, WHIP for metal, punk and hard rock; DISCIPLINE
+               0, CEILING OFF, MATCH on (the level doesn't change).
+    A Chop Shop or Dominatrix counts as a track plugin when its DAW track
+    name matches one of your Servants' tracks; the ones on the master bus
+    stay the bus plugins.
     LOW BLOW   on the bass, with the kick on its sidechain. From the Kick
                and Bass Servants The Master finds where they fight and how
                evenly: DEPTH from the genre and the fight, CROSSOVER just

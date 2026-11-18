@@ -517,7 +517,7 @@ std::vector<MasterProcessor::TrackStatus> MasterProcessor::trackStatus() const
     }
     for (auto& [id, p] : peers)
     {
-        if (! isTrackKind (p.kind) || seen.count (id)) continue;
+        if (! isTrackPeer (id) || seen.count (id)) continue;
         TrackStatus s;
         s.peerId = id; s.kind = p.kind; s.linked = true;
         s.name = p.extra.getProperty ("track", "").toString();
@@ -548,7 +548,7 @@ std::vector<juce::String> MasterProcessor::detectChain() const
         juce::String best; float bestD = 0.6f;
         for (auto& [id, p] : peers)
         {
-            if (used.count (id) || ! p.env.isObject() || isTrackKind (p.kind)) continue;   // Servants, BuzzKill, Flatliner sit on tracks, not on the bus
+            if (used.count (id) || ! p.env.isObject() || isTrackPeer (id)) continue;   // Servants, BuzzKill, Flatliner sit on tracks, not on the bus
             int shared = 0;
             const float d = cdlink::envDistance (p.env, "out", cur, curKey, shared);
             if (shared >= 12 && d < bestD) { bestD = d; best = id; }
@@ -570,12 +570,26 @@ bool MasterProcessor::chainOrderKnown() const
     return loud >= 12;
 }
 
+bool MasterProcessor::isTrackPeer (const juce::String& id) const
+{
+    const auto it = peers.find (id);
+    if (it == peers.end()) return false;
+    const auto& p = it->second;
+    if (isTrackKind (p.kind)) return true;
+    if (p.kind != "chopshop" && p.kind != "dominatrix") return false;
+    const auto track = p.extra.getProperty ("track", "").toString();
+    if (track.isEmpty()) return false;
+    for (auto& [sid, sp] : peers)
+        if (sp.kind == "servant" && sp.extra.getProperty ("track", "").toString().equalsIgnoreCase (track)) return true;
+    return false;
+}
+
 juce::String MasterProcessor::resolvePeer (const juce::String& kind) const
 {
     const auto order = detectChain();
     for (auto& id : order) if (peers.at (id).kind == kind) return id;
     juce::String only; int count = 0;
-    for (auto& [id, p] : peers) if (p.kind == kind) { only = id; ++count; }
+    for (auto& [id, p] : peers) if (p.kind == kind && ! isTrackPeer (id)) { only = id; ++count; }
     return count == 1 ? only : juce::String();
 }
 
@@ -666,7 +680,7 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
     std::set<juce::String> ridden;
     for (auto& [id, p] : peers)
     {
-        if (p.kind != "buzzkill" && p.kind != "flatliner" && p.kind != "lowblow") continue;
+        if (p.kind != "buzzkill" && p.kind != "flatliner" && p.kind != "lowblow" && ! ((p.kind == "chopshop" || p.kind == "dominatrix") && isTrackPeer (id))) continue;
         mst::HelperInfo h;
         h.id = id; h.kind = p.kind; h.extra = p.extra;
         h.track = p.extra.getProperty ("track", "").toString();
@@ -678,7 +692,7 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
             if (h.track.isEmpty()) h.track = sp.extra.getProperty ("track", "").toString();
             if (p.kind == "flatliner") ridden.insert (sv);
         }
-        else h.role = p.kind == "flatliner" ? "Lead" : (p.kind == "lowblow" ? "Bass" : "Rhythm");
+        else h.role = p.kind == "flatliner" ? "Lead" : (p.kind == "lowblow" || p.kind == "dominatrix" ? "Bass" : (p.kind == "chopshop" ? "Drums" : "Rhythm"));
         helpers.push_back (h);
     }
 
@@ -704,7 +718,21 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
     const auto clash = mst::findLowClash (tracks);
     for (auto& h : helpers)
     {
-        if (h.kind == "lowblow") { chainPlan.tracks.push_back (mst::planLowBlow (h, clash, G)); anyLowBlow = true; }
+        auto trackInfo = [&] () -> const mst::TrackInfo* { for (auto& t : tracks) if (t.name.equalsIgnoreCase (h.track)) return &t; return nullptr; };
+        if (h.kind == "chopshop")
+        {
+            chainPlan.tracks.push_back (mst::planTrackChop (h, trackInfo(), G));
+            // the clipper takes the peaks: The Servant on the same track doesn't compress them as well
+            for (auto& sv : chainPlan.tracks)
+                if (sv.kind == "servant" && sv.name.equalsIgnoreCase (h.track) && sv.compOn)
+                {
+                    sv.compOn = false; sv.comp = 0; sv.params["compOn"] = 0.0f;
+                    for (int w = sv.why.size(); --w >= 0;) if (sv.why[w].startsWith ("COMP")) sv.why.remove (w);
+                    sv.why.add ("COMP off: Chop Shop on this track shaves its peaks instead (more punch than compressing them).");
+                }
+        }
+        else if (h.kind == "dominatrix") chainPlan.tracks.push_back (mst::planTrackDom (h, trackInfo(), G));
+        else if (h.kind == "lowblow") { chainPlan.tracks.push_back (mst::planLowBlow (h, clash, G)); anyLowBlow = true; }
         else if (h.kind == "buzzkill") { chainPlan.tracks.push_back (mst::planBuzzKill (h, in, G)); anyBuzz = true; }
         else                      { chainPlan.tracks.push_back (mst::planFlatliner (h, G)); anyFlat = true; }
     }
@@ -715,6 +743,22 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
         else if (anyFlat && chainPlan.onTracks[i].startsWith ("FLATLINER")) chainPlan.onTracks.remove (i);
     }
     if (anyBuzz) chainPlan.removeAdds ("buzzkill");
+    // drum tracks that make the mix's peaks: a clipper on the track beats compressing them
+    auto hasOn = [&] (const juce::String& kind, const juce::String& track)
+    {
+        for (auto& t : chainPlan.tracks) if (t.kind == kind && t.name.equalsIgnoreCase (track)) return true;
+        return false;
+    };
+    for (auto& sv : chainPlan.tracks)
+        if (mst::wantsDrumClip (sv) && ! hasOn ("chopshop", sv.name))
+            chainPlan.adds.push_back ({ "chopshop", sv.name, "Its hits make the mix's peaks. Chop Shop shaves them at the source with more punch than "
+                                        "compressing them (The Servant's compressor does the job until you add it). Put it after The Servant, then press UPDATE." });
+    // a bass that's thin on small speakers: Dominatrix's saturation gives it harmonics
+    for (auto& t : tracks)
+        if (mst::roleIs (t.role, { "Bass" }) && mst::bassHarmonicsDb (t) < mst::kThinBassDb && ! hasOn ("dominatrix", t.name))
+            chainPlan.adds.push_back ({ "dominatrix", t.name, "Its 250 Hz - 2 kHz sits " + juce::String (-mst::bassHarmonicsDb (t), 0)
+                                        + " dB under its lows, so it all but disappears on phones and small speakers. Dominatrix's saturation adds the harmonics "
+                                        "that let it be heard there, without changing its level. Put it after The Servant, then press UPDATE." });
     if (! anyLowBlow && clash.found)
     {
         chainPlan.adds.push_back ({ "lowblow", clash.bassName, "It and " + clash.kickName + " fight in " + juce::String (mst::bandDefs()[(size_t) clash.band].label)
@@ -943,7 +987,7 @@ bool MasterProcessor::chainOutdated() const
     for (auto& t : chainPlan.tracks) { planned.insert (t.id); if (peers.count (t.id) == 0) return true; }   // one went away
     for (auto& [id, p] : peers)
     {
-        if (! isTrackKind (p.kind) || planned.count (id)) continue;
+        if (! isTrackPeer (id) || planned.count (id)) continue;
         // a Servant added later can only be planned once it has heard its track
         if (p.kind == "servant" && (double) p.extra.getProperty ("seconds", 0.0) < 1.0) continue;
         return true;
