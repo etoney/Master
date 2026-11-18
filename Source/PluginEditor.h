@@ -84,6 +84,23 @@ public:
     juce::StringArray details;       // one line per step
 };
 
+// The way through: LISTEN > REPORT > PRESCRIPTION > APPLY > REFINE. Steps you've reached can be clicked.
+class StepBar : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    void paint (juce::Graphics&) override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseMove (const juce::MouseEvent&) override;
+    void mouseExit (const juce::MouseEvent&) override { hover = -1; repaint(); }
+    int now = 0;           // the step you're on (0..4)
+    int open = 1;          // the last step you can click
+    int page = 0;          // the page on screen: steps 0-1 are the report, 2-4 the fix
+    std::function<void (int)> onPick;
+private:
+    int stepAt (juce::Point<int>) const;
+    int hover = -1;
+};
+
 // MY PLUGINS: what The Master changed in which plugin, and why (lives in a Viewport)
 class ChangeLog : public juce::Component
 {
@@ -219,8 +236,8 @@ public:
     // used by the headless snapshot test
     void refreshNow() { lastSnap = -1; timerCallback(); }
     void showPage (int p) { setPage (p); refreshNow(); }
-    void pressAutoFix() { autoFixButton.triggerClick(); }
-    juce::String mainButtonText() const { return autoFixButton.getButtonText(); }
+    void pressAutoFix() { nextButton.triggerClick(); }
+    juce::String mainButtonText() const { return nextButton.getButtonText(); }
 
 private:
     struct Plate { juce::String title; juce::Rectangle<int> bounds; bool hot = false; };
@@ -282,7 +299,9 @@ private:
     // pages + FIX IT controls
     int page = 0;
     bool reportAfter = false;
-    Selector pageTabs { nullptr, { "ANALYZE", "FIX IT" }, 17.0f };
+    StepBar stepBar;
+    void updateSteps();
+    void runNextButton();
     Selector reportSel { nullptr, { "YOUR MIX", "AFTER FIXES" }, 14.0f };
     juce::TextButton autoFixButton { "AUTO FIX" };
     juce::ToggleButton fixOnButton { "FIXES ON" }, matchButton { "MATCH LEVELS (A/B)" }, bassMonoButton { "BASS MONO" };

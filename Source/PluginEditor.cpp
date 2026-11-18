@@ -391,30 +391,68 @@ void Selector::paint (juce::Graphics& g)
 //==============================================================================
 void StepList::paint (juce::Graphics& g)
 {
-    static const char* titles[] = { "LISTEN", "PRESCRIBE", "PLACE THE PLUGINS", "APPLY", "REFINE" };
-    const float rh = (float) getHeight() / 5.0f;
+    // the step you're on, in full: what it means and what to press
+    static const char* titles[] = { "LISTEN", "REPORT", "PRESCRIPTION", "APPLY", "REFINE" };
+    const int i = juce::jlimit (0, 4, current);
+    auto r = getLocalBounds().toFloat().reduced (10.0f, 8.0f);
+    g.setColour (pal::paintDim);
+    g.setFont (tex::stencil (11.5f).withExtraKerningFactor (0.12f));
+    g.drawText ("STEP " + juce::String (i + 1) + " OF 5", r.removeFromTop (16.0f).toNearestInt(), juce::Justification::centredLeft);
+    g.setColour (juce::Colour (0xfffff0d8));
+    g.setFont (tex::stencil (22.0f).withExtraKerningFactor (0.08f));
+    g.drawText (titles[i], r.removeFromTop (30.0f).toNearestInt(), juce::Justification::centredLeft);
+    r.removeFromTop (4.0f);
+    juce::AttributedString as;
+    as.append (details[i], bodyFont (13.0f), pal::paint);
+    as.setWordWrap (juce::AttributedString::byWord);
+    juce::TextLayout tl; tl.createLayout (as, r.getWidth());
+    tl.draw (g, r.withHeight (juce::jmin (r.getHeight(), tl.getHeight())));
+}
+
+//==============================================================================
+int StepBar::stepAt (juce::Point<int> p) const { return juce::jlimit (0, 4, p.x * 5 / juce::jmax (1, getWidth())); }
+void StepBar::mouseMove (const juce::MouseEvent& e) { const int h = stepAt (e.getPosition()); if (h != hover) { hover = h; repaint(); } }
+void StepBar::mouseDown (const juce::MouseEvent& e) { const int i = stepAt (e.getPosition()); if (i <= open && onPick) onPick (i); }
+
+void StepBar::paint (juce::Graphics& g)
+{
+    static const char* titles[] = { "LISTEN", "REPORT", "PRESCRIPTION", "APPLY", "REFINE" };
+    const float sw = (float) getWidth() / 5.0f, h = (float) getHeight(), tip = 12.0f;
     for (int i = 0; i < 5; ++i)
     {
-        auto row = juce::Rectangle<float> (0, rh * (float) i, (float) getWidth(), rh).reduced (4.0f, 2.0f);
-        const bool done = i < current, now = i == current;
-        if (now)
+        // a chevron: each step points at the next
+        const float x0 = (float) i * sw + 2.0f, x1 = (float) (i + 1) * sw - 2.0f;
+        juce::Path pth;
+        pth.startNewSubPath (x0, 2.0f);
+        pth.lineTo (x1 - (i < 4 ? tip : 0.0f), 2.0f);
+        if (i < 4) pth.lineTo (x1, h * 0.5f);
+        pth.lineTo (x1 - (i < 4 ? tip : 0.0f), h - 2.0f);
+        pth.lineTo (x0, h - 2.0f);
+        if (i > 0) pth.lineTo (x0 + tip, h * 0.5f);
+        pth.closeSubPath();
+        const bool done = i < now, here = i == now, locked = i > open, onPage = (i <= 1) == (page == 0), hi = i == hover && ! locked;
+        if (here)
         {
-            g.setColour (pal::signal.withAlpha (0.22f)); g.fillRoundedRectangle (row, 3.0f);
-            g.setColour (pal::signalHot.withAlpha (0.8f)); g.drawRoundedRectangle (row, 3.0f, 1.2f);
+            juce::DropShadow (pal::signalHot.withAlpha (0.45f), 10, {}).drawForPath (g, pth);
+            g.setGradientFill (juce::ColourGradient (juce::Colour (0xff8a2a14), 0, 0, juce::Colour (0xff3a0e06), 0, h, false));
         }
-        auto badge = row.removeFromLeft (rh - 10.0f).reduced (3.0f).withSizeKeepingCentre (22.0f, 22.0f);
-        g.setColour (done ? juce::Colour (0xff9aa86a) : (now ? pal::signalHot : pal::rustDeep)); g.fillEllipse (badge);
-        g.setColour (done ? juce::Colour (0xff1a1410) : pal::paint);
-        g.setFont (tex::stencil (13.0f));
+        else
+            g.setGradientFill (juce::ColourGradient (hi ? juce::Colour (0xff43332a) : juce::Colour (0xff2c221d), 0, 0, juce::Colour (0xff120d0b), 0, h, false));
+        g.fillPath (pth);
+        g.setColour (here ? pal::signalHot : (onPage && ! locked ? pal::rustLight : juce::Colour (0xff4a2c1c)));
+        g.strokePath (pth, juce::PathStrokeType (here ? 1.6f : (onPage && ! locked ? 1.3f : 1.0f)));
+
+        auto r = juce::Rectangle<float> (x0 + (i > 0 ? tip + 4.0f : 8.0f), 0, x1 - x0 - (i > 0 ? tip + 4.0f : 8.0f) - tip, h);
+        auto badge = r.removeFromLeft (20.0f).withSizeKeepingCentre (18.0f, 18.0f);
+        g.setColour (done ? juce::Colour (0xff9aa86a) : (here ? pal::signalHot : (locked ? juce::Colour (0xff3a2418) : pal::rustDeep)));
+        g.fillEllipse (badge);
+        g.setColour (done ? juce::Colour (0xff1a1410) : (locked ? pal::paintDim.withAlpha (0.5f) : pal::paint));
+        g.setFont (tex::stencil (11.0f));
         g.drawText (done ? juce::String ("OK") : juce::String (i + 1), badge.toNearestInt(), juce::Justification::centred);
-        row.removeFromLeft (6.0f);
-        auto top = row.removeFromTop (row.getHeight() * 0.5f);
-        g.setColour (now ? juce::Colour (0xfffff0d8) : (done ? pal::paint.withAlpha (0.75f) : pal::paintDim));
-        g.setFont (tex::stencil (13.5f).withExtraKerningFactor (0.06f));
-        g.drawText (titles[i], top.toNearestInt(), juce::Justification::bottomLeft);
-        g.setColour (now ? pal::paint : pal::paintDim.withAlpha (0.8f));
-        g.setFont (bodyFont (10.5f));
-        g.drawFittedText (details[i], row.toNearestInt(), juce::Justification::topLeft, 1, 0.75f);
+        r.removeFromLeft (6.0f);
+        g.setColour (here ? juce::Colour (0xfffff0d8) : (locked ? pal::paintDim.withAlpha (0.45f) : pal::paint.withAlpha (done ? 0.75f : 0.9f)));
+        g.setFont (tex::stencil (14.5f).withExtraKerningFactor (0.08f));
+        g.drawFittedText (titles[i], r.toNearestInt(), juce::Justification::centredLeft, 1, 0.7f);
     }
 }
 
@@ -1201,9 +1239,15 @@ MasterEditor::MasterEditor (MasterProcessor& p) : AudioProcessorEditor (&p), pro
     addAndMakeVisible (soundsLike);
     soundsLike.setInterceptsMouseClicks (false, false);
 
-    pageTabs.setTooltip ("ANALYZE: the report.  FIX IT: The Master prescribes your Castle Danger plugins and sets them (or, if you choose, fixes the mix itself).");
-    pageTabs.onChange = [this] (int i) { setPage (i); };
-    addAndMakeVisible (pageTabs);
+    stepBar.setTooltip ("The way through: listen to your song, read the report, then The Master prescribes your plugins, sets them and fine-tunes. "
+                        "Click any step you've reached to look at it again.");
+    stepBar.onPick = [this] (int i)
+    {
+        if (i <= 1) { setPage (0); return; }
+        if (proc.getChainStage() == 0) { runNextButton(); return; }   // PRESCRIPTION before there is one = GO TO FIX
+        setPage (1);
+    };
+    addAndMakeVisible (stepBar);
     reportSel.setTooltip ("Report on your mix as it comes in, or on what comes out after the fixes.");
     reportSel.onChange = [this] (int i) { reportAfter = i == 1; lastSnap = -1; };
     addAndMakeVisible (reportSel);
@@ -1292,21 +1336,8 @@ MasterEditor::MasterEditor (MasterProcessor& p) : AudioProcessorEditor (&p), pro
     addChildComponent (builtInButton);
     nextButton.setName ("autofix");   // the hot, glowing style: the way forward
     nextButton.setTooltip ("Go to the fix: The Master prescribes your Castle Danger plugins right away, then sets them for you.");
-    nextButton.onClick = [this]
-    {
-        setPage (1);
-        if (proc.getChainStage() == 0 && ! proc.isWaitingForServants())
-        {
-            juce::Component::SafePointer<MasterEditor> safe (this);
-            proc.requestPrescribe ([safe] (const juce::String&)   // not heard enough yet: the steps say what to do
-            {
-                if (safe == nullptr) return;
-                safe->lastSnap = -1; safe->lastChainSig = -1; safe->updateVisibility();
-            });
-        }
-        refreshNow();
-    };
-    addChildComponent (nextButton);
+    nextButton.onClick = [this] { runNextButton(); };
+    addAndMakeVisible (nextButton);
     stepList.setInterceptsMouseClicks (false, false);
     newRxButton.setTooltip ("Start over after big changes to the mix: every Mix System plugin goes back to neutral, then play the song and press GO TO FIX. "
                             "(For plugins you've added or removed, the main button says UPDATE: no need to start over.)");
@@ -1314,6 +1345,7 @@ MasterEditor::MasterEditor (MasterProcessor& p) : AudioProcessorEditor (&p), pro
     {
         proc.startOver();
         lastChainSig = -1;
+        reportAfter = false; reportSel.setIndex (0);
         setPage (0);
         showMessage ("STARTING OVER", "Every Mix System plugin is back to neutral, so The Master hears your mix as it really is. "
                                       "Play the song from the top (the whole song is best), then press GO TO FIX.");
@@ -1385,7 +1417,8 @@ MasterEditor::FixSection& MasterEditor::makeSection (MasterProcessor::Section id
 void MasterEditor::setPage (int pg)
 {
     page = pg;
-    pageTabs.setIndex (pg);
+    stepBar.page = pg;
+    updateSteps();
     updateVisibility();
     buildBackdrop();
     repaint();
@@ -1399,19 +1432,18 @@ void MasterEditor::updateVisibility()
     for (auto* c : fixComps) c->setVisible (page == 1 && ! chainMode);
     for (auto* c : chainComps) c->setVisible (page == 1 && chainMode);
     reportSel.setVisible (page == 0);
-    nextButton.setVisible (page == 0);
     fixInfo.pluginMode = chainMode;
     builtInButton.setVisible (false);
     diagButton.setBounds (page == 0 ? juce::Rectangle<int> (868, 286, 148, 20) : juce::Rectangle<int> (920, 530, 156, 20));
-    pageTabs.setLabels ({ "ANALYZE", "FIX IT WITH MY PLUGINS" });
-    autoFixButton.setVisible (page == 1);
+    autoFixButton.setVisible (false);   // the one button up top does every step now
     outSel->setVisible (page == 1);
     outLabel.setVisible (page == 1);
     fixInfo.setVisible (page == 1);
     newRxButton.setVisible (page == 1 && chainMode && proc.getChainStage() >= 1);
-    autoFixButton.setButtonText (chainButtonText());
     lastOutdated = proc.chainOutdated();
-    autoFixButton.setTooltip (lastOutdated ? "You've added or removed plugins on your tracks since the prescription. UPDATE plans them in from the same analysis"
+    updateSteps();
+    nextButton.setTooltip (page == 0 ? juce::String ("The next step. After you've played the song: GO TO FIX, where The Master prescribes your Castle Danger plugins.")
+                         : lastOutdated ? "You've added or removed plugins on your tracks since the prescription. UPDATE plans them in from the same analysis"
                                              + juce::String (proc.getChainStage() >= 2 ? " and sends the new settings." : ".")
                                            : juce::String ("Does the next step: PRESCRIBE, then APPLY, then REFINE."));
 }
@@ -1422,6 +1454,48 @@ juce::String MasterEditor::chainButtonText() const
     if (st == 0) return "PRESCRIBE";
     if (proc.chainOutdated()) return "UPDATE";
     return st == 1 ? "APPLY" : "REFINE";
+}
+
+void MasterEditor::updateSteps()
+{
+    const int stage = proc.getChainStage();
+    bool fromSaved = false;
+    const auto heard = proc.getDisplayFeatures (fromSaved);
+    bool allLinked = stage >= 1;
+    if (stage == 1) for (auto& st : proc.chainStatus()) allLinked = allLinked && st.linked;
+    const int now = stage == 0 ? (heard.valid && heard.seconds >= 20.0 ? 1 : 0) : stage == 1 ? (allLinked ? 3 : 2) : 4;
+    const int open = stage == 0 ? 2 : 4;
+    juce::String label;
+    if (page == 0) label = stage == 0 && now == 0 ? "PLAY YOUR SONG" : "GO TO FIX  >";
+    else label = chainButtonText();
+    if (stepBar.now != now || stepBar.open != open || stepBar.page != page) { stepBar.now = now; stepBar.open = open; stepBar.page = page; stepBar.repaint(); }
+    if (nextButton.getButtonText() != label) nextButton.setButtonText (label);
+}
+
+void MasterEditor::runNextButton()
+{
+    if (page == 1) { runChainButton(); return; }
+    const int stage = proc.getChainStage();
+    bool fromSaved = false;
+    const auto heard = proc.getDisplayFeatures (fromSaved);
+    if (stage == 0 && ! (heard.valid && heard.seconds >= 20.0))
+    {
+        showMessage ("PLAY YOUR SONG", "Press RESET, then play your song from the top (the whole song is best). The report fills in as it plays; "
+                                       "after 20 seconds this button says GO TO FIX.");
+        return;
+    }
+    setPage (1);
+    if (stage == 0 && ! proc.isWaitingForServants())
+    {
+        juce::Component::SafePointer<MasterEditor> safe (this);
+        proc.requestPrescribe ([safe] (const juce::String& e)
+        {
+            if (safe == nullptr) return;
+            if (e.isNotEmpty()) { safe->showMessage ("NOT YET", e); if (safe->proc.getChainStage() == 0) safe->setPage (0); }
+            safe->lastSnap = -1; safe->lastChainSig = -1; safe->updateVisibility();
+        });
+    }
+    refreshNow();
 }
 
 void MasterEditor::runChainButton()
@@ -1486,14 +1560,14 @@ void MasterEditor::resized()
     genreBar.setBounds (26, 162, 692, 54);
     soundsLike.setBounds (750, 162, 322, 54);
     tabsArea = { 16, 232, 1068, 42 };
-    pageTabs.setBounds (24, 237, 460, 32);
-    reportSel.setBounds (814, 239, 262, 28);
-    nextButton.setBounds (494, 237, 206, 32);
+    stepBar.setBounds (24, 237, 800, 32);
+    nextButton.setBounds (834, 237, 242, 32);
+    reportSel.setBounds (440, 285, 204, 22);
     builtInButton.setBounds (856, 239, 220, 28);
     chainView.setBounds (300, 308, 772, 198);
     logViewport.setBounds (300, 552, 772, 170);
     changeLog.setEntries (proc.getLog(), logViewport.getWidth() - 12, {});
-    stepList.setBounds (28, 386, 238, 172);
+    stepList.setBounds (28, 350, 238, 204);
     newRxButton.setBounds (936, 284, 140, 20);
 
     // ANALYZE
@@ -1712,6 +1786,11 @@ void MasterEditor::updateReport()
 
 void MasterEditor::timerCallback()
 {
+    {   // the step bar and the next-step button follow what's happening (a few times a second is plenty)
+        static thread_local juce::uint32 lastSteps = 0;
+        const auto nowMs = juce::Time::getMillisecondCounter();
+        if (nowMs - lastSteps > 250 || lastSnap == -1) { lastSteps = nowMs; updateSteps(); }
+    }
     if (proc.getLibrary().version.load() != lastLib) { refreshGenres(); lastSnap = -1; }
     const int snap = proc.getWorker().getSnapshotVersion() * 7919 + proc.getPostWorker().getSnapshotVersion();
     const auto choice = proc.getGenreChoice();
@@ -1756,20 +1835,20 @@ void MasterEditor::timerCallback()
             const auto heard = proc.getDisplayFeatures (fromSaved);
             const auto t = mmss (heard.seconds);
             juce::StringArray d;
-            d.add (stage >= 1 ? "Heard " + mmss (cp.seconds) + " of your mix."
-                              : heard.seconds >= 20.0 ? t + " heard. Bypass any bus plugins first." : "RESET, then play the whole song (" + t + " so far).");
-            d.add (stage >= 1 ? juce::String ((int) cp.steps.size()) + " bus plugins, " + juce::String ((int) cp.tracks.size()) + " track plugins"
-                              : "The Master picks your plugins and settings.");
-            d.add (stage == 0 ? "Put them on the master bus, in order."
-                              : juce::String (linked) + " of " + juce::String ((int) chainView.steps.size()) + " linked"
-                                + (allLinked ? (chainView.orderKnown ? (inOrder ? ", in order" : ", ORDER WRONG") : ", play to check order") : juce::String()));
-            d.add (stage >= 2 ? "Done. Every change is in the log." : "Sets every knob, with the reason.");
-            d.add (stage >= 2 ? "Play it through, then REFINE." : "Fine-tune from what came out.");
+            d.add ("Press RESET, then play your song from the top (" + t + " heard so far). The whole song is best.");
+            d.add (t + " heard. Press PRESCRIBE (top right) and The Master picks your plugins and every setting.");
+            d.add ("Put the plugins where the lists show: the master bus in that order, and the tracks under YOUR TRACKS. "
+                   + juce::String (linked) + " of " + juce::String ((int) chainView.steps.size()) + " bus plugins linked"
+                   + (allLinked ? (chainView.orderKnown ? (inOrder ? ", in order." : ". ORDER WRONG: move them to match.") : ". Play a few seconds to check the order.") : juce::String (".")));
+            d.add ("Everything is in place. Press APPLY (top right): The Master sets every knob and logs the reason below.");
+            d.add ("Done: every change is in the log. Play the song through again, then press REFINE (top right) to fine-tune from what came out. "
+                   "Big changes to the mix? START OVER.");
             stepList.details = d;
             stepList.current = stage == 0 ? (heard.seconds >= 20.0 ? 1 : 0) : stage == 1 ? (allLinked ? 3 : 2) : 4;
             const bool outdated = proc.chainOutdated();
-            if (outdated) { d.set (2, "Track plugins added or removed: press UPDATE."); stepList.details = d; stepList.current = 2; }
-            if (outdated != lastOutdated || autoFixButton.getButtonText() != chainButtonText()) updateVisibility();
+            if (outdated) { d.set (stepList.current, "Plugins added or removed on your tracks, or one has now heard the song: press UPDATE (top right). "
+                                                    "The Master plans them in from the same analysis."); stepList.details = d; }
+            if (outdated != lastOutdated || nextButton.getButtonText() != chainButtonText()) updateVisibility();
             stepList.repaint();
             updateVisibility();
         }
@@ -2270,8 +2349,6 @@ void MasterEditor::buildBackdrop()
     if (page == 0)
     {   // the verdict list sits in a dark well
         g.setColour (pal::screen); g.fillRoundedRectangle (viewport.getBounds().toFloat(), 4.0f);
-        auto t = tex::distressedText ("REPORT ON", 110, 16, tex::stencil (14.0f), pal::paint, juce::Justification::centredRight, scale, 0.2f, 31, 0.12f);
-        g.setOpacity (1.0f); g.drawImage (t, juce::Rectangle<float> ((float) reportSel.getX() - 118.0f, (float) reportSel.getY() + 6.0f, 110.0f, 16.0f));
     }
     else if (proc.isPluginMode())
     {
