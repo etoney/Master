@@ -970,9 +970,17 @@ juce::String MasterProcessor::refineChain()
         if (chainPlan.headroom)
         {
             // -6 dB mode: peaks just under -6 dBFS, and no squashing (the mastering engineer gets the dynamics)
-            const float squash = chainPlan.before.plr - after.plr;
+            // squashed is judged against the genre, not against your mix: when your peaks stuck out, the
+            // prescription is meant to bring them in (Chop Shop, the drums' ATTACK), so a smaller PLR is the point
+            const auto& sp = g.stat (mst::fPlr);
+            const float floorPlr = sp.mean - sp.sd;
             want = 0.0f;
-            if (squash > 2.0f) { want = -(squash - 1.0f); why = "The peaks came out " + juce::String (squash, 1) + " dB more squashed than your mix; backing off so the mastering step keeps its dynamics."; }
+            if (after.plr < floorPlr && after.truePeak > -7.5f)
+            {
+                want = -juce::jmin (3.0f, floorPlr - after.plr);
+                why = "The peaks came out only " + juce::String (after.plr, 1) + " dB over the average; " + g.name + " keeps at least "
+                    + juce::String (floorPlr, 1) + ". Backing off so the mastering step keeps its dynamics.";
+            }
             else if (after.truePeak < -7.5f) { want = -6.3f - after.truePeak; why = "Peaks came out at " + juce::String (after.truePeak, 1) + " dBTP; bringing them up to just under the -6 dB headroom line."; }
         }
         const float next = juce::jlimit (-12.0f, 12.0f, std::round ((cur + want) * 10.0f) / 10.0f);
@@ -1032,6 +1040,14 @@ bool MasterProcessor::chainOutdated() const
     if (! chainPlan.valid || chainStage < 1) return false;
     std::set<juce::String> planned;
     for (auto& t : chainPlan.tracks) { planned.insert (t.id); if (peers.count (t.id) == 0) return true; }   // one went away
+    // one that hadn't heard the song when it was planned, and has now
+    for (auto& t : chainPlan.tracks)
+    {
+        const auto& x = peers.at (t.id).extra;
+        const bool heard = (double) x.getProperty ("seconds", 0.0) >= 5.0;
+        if (t.note == "NOT ENOUGH HEARD YET" && heard) return true;
+        if (t.note == "NOT HEARD YET" && heard && (double) x.getProperty ("songPeakDb", -100.0) > -90.0) return true;
+    }
     for (auto& [id, p] : peers)
     {
         if (! isTrackPeer (id) || planned.count (id)) continue;
