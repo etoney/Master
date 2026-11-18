@@ -59,7 +59,7 @@ REFERENCE GENRE
 -------------------------------------------------------------------------------
   AUTO      The Master works out which genre your mix sounds closest to and
             compares against that. The yellow lamp marks the match.
-  ROCK / METAL / PUNK / HARD ROCK
+  ROCK / HARD ROCK / PUNK / METAL
             Lock the comparison to one genre (it's saved with the project).
             A project saved aimed at Pop (removed in 1.11) goes back to AUTO.
 

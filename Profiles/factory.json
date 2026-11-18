@@ -78,29 +78,29 @@
       }
     },
     {
-      "id": "metal",
-      "name": "Metal",
+      "id": "hardRock",
+      "name": "Hard Rock",
       "tracks": 0,
       "source": "seed",
       "features": {
         "lufs": {
-          "mean": -7.5,
+          "mean": -8.0,
           "sd": 1.5
         },
         "plr": {
-          "mean": 7.5,
+          "mean": 8.5,
           "sd": 1.5
         },
         "lra": {
-          "mean": 4.5,
+          "mean": 5.5,
           "sd": 2.0
         },
         "width": {
-          "mean": -9.0,
+          "mean": -9.5,
           "sd": 3.0
         },
         "correlation": {
-          "mean": 0.75,
+          "mean": 0.78,
           "sd": 0.1
         },
         "lowCorrelation": {
@@ -108,43 +108,43 @@
           "sd": 0.04
         },
         "sub": {
-          "mean": -5.99,
+          "mean": -6.44,
           "sd": 2.5
         },
         "bass": {
-          "mean": -5.19,
+          "mean": -4.74,
           "sd": 2.5
         },
         "low": {
-          "mean": -6.49,
+          "mean": -6.74,
           "sd": 2.5
         },
         "lowMid": {
-          "mean": -9.99,
+          "mean": -9.94,
           "sd": 2.5
         },
         "mid": {
-          "mean": -12.99,
+          "mean": -12.44,
           "sd": 2.5
         },
         "upperMid": {
-          "mean": -14.49,
+          "mean": -14.44,
           "sd": 2.5
         },
         "presence": {
-          "mean": -16.49,
+          "mean": -16.94,
           "sd": 2.5
         },
         "bite": {
-          "mean": -19.99,
+          "mean": -20.94,
           "sd": 2.5
         },
         "sheen": {
-          "mean": -26.49,
+          "mean": -27.44,
           "sd": 2.5
         },
         "air": {
-          "mean": -31.99,
+          "mean": -32.94,
           "sd": 2.5
         }
       }
@@ -222,29 +222,29 @@
       }
     },
     {
-      "id": "hardRock",
-      "name": "Hard Rock",
+      "id": "metal",
+      "name": "Metal",
       "tracks": 0,
       "source": "seed",
       "features": {
         "lufs": {
-          "mean": -8.0,
+          "mean": -7.5,
           "sd": 1.5
         },
         "plr": {
-          "mean": 8.5,
+          "mean": 7.5,
           "sd": 1.5
         },
         "lra": {
-          "mean": 5.5,
+          "mean": 4.5,
           "sd": 2.0
         },
         "width": {
-          "mean": -9.5,
+          "mean": -9.0,
           "sd": 3.0
         },
         "correlation": {
-          "mean": 0.78,
+          "mean": 0.75,
           "sd": 0.1
         },
         "lowCorrelation": {
@@ -252,43 +252,43 @@
           "sd": 0.04
         },
         "sub": {
-          "mean": -6.44,
+          "mean": -5.99,
           "sd": 2.5
         },
         "bass": {
-          "mean": -4.74,
+          "mean": -5.19,
           "sd": 2.5
         },
         "low": {
-          "mean": -6.74,
+          "mean": -6.49,
           "sd": 2.5
         },
         "lowMid": {
-          "mean": -9.94,
+          "mean": -9.99,
           "sd": 2.5
         },
         "mid": {
-          "mean": -12.44,
+          "mean": -12.99,
           "sd": 2.5
         },
         "upperMid": {
-          "mean": -14.44,
+          "mean": -14.49,
           "sd": 2.5
         },
         "presence": {
-          "mean": -16.94,
+          "mean": -16.49,
           "sd": 2.5
         },
         "bite": {
-          "mean": -20.94,
+          "mean": -19.99,
           "sd": 2.5
         },
         "sheen": {
-          "mean": -27.44,
+          "mean": -26.49,
           "sd": 2.5
         },
         "air": {
-          "mean": -32.94,
+          "mean": -31.99,
           "sd": 2.5
         }
       }

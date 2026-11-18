@@ -188,7 +188,7 @@ int main (int argc, char** argv)
         check (mst::ProfilePack::parse (factoryJson, factory, err), "factory pack parses " + err);
         juce::StringArray names;
         for (auto& g : factory.genres) names.add (g.name);
-        check (names.joinIntoString (",") == "Rock,Metal,Punk,Hard Rock", "factory genres: " + names.joinIntoString (", "));
+        check (names.joinIntoString (",") == "Rock,Hard Rock,Punk,Metal", "factory genres: " + names.joinIntoString (", "));
         for (auto& g : factory.genres)
         {
             float t = 0; for (int b = 0; b < mst::kNumBands; ++b) t += std::pow (10.0f, g.stat (mst::fBand0 + b).mean / 10.0f);
