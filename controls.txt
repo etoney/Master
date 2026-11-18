@@ -188,9 +188,13 @@ FIX IT WITH MY PLUGINS  (the main way: The Master sets your plugins for you)
   stays with The Master's TONE MATCH EQ, so the two never fight. Each Freak
   band shows The Master's reason under its knobs.
 
-  START OVER (top right of the prescription) is only for big changes to
-  the mix itself: bypass the bus plugins, RESET, play the song again, then
-  press it, so The Master hears the untreated mix.
+  START OVER (top right of the prescription) is for big changes to the
+  mix itself. It puts every Mix System plugin back to neutral (pass-through)
+  and clears the prescription; play the song from the top, then press
+  GO TO FIX, so The Master hears the untreated mix. (GO TO FIX does this
+  for you if the bus plugins are still set from an earlier prescription.)
+  With GENRE on AUTO, the report keeps judging against the genre the
+  prescription aimed at until you start over.
 
   THE SERVANT ON YOUR TRACKS (The Servant 0.7 or later)
   Put The Servant on your tracks and set each one's ROLE (Lead Vocal,

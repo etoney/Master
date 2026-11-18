@@ -134,6 +134,9 @@ public:
     bool chainOutdated() const;
     // UPDATE: re-plan the tracks and bus from the same analysis (no need to play again), re-apply if it was applied
     void requestUpdate (std::function<void (const juce::String&)> done);
+    // START OVER: every Mix System plugin back to neutral, the prescription cleared and the measuring restarted,
+    // so the next GO TO FIX hears your mix as it really is (not through the last prescription)
+    void startOver();
     // PRESCRIBE as the button does it: the Servants that are listening finish first (each decides
     // its own resonances and clean-up), then The Master prescribes. 'done' gets prescribe()'s answer.
     void requestPrescribe (std::function<void (const juce::String&)> done, bool fromFrozen = false);

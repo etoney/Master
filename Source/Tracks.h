@@ -25,6 +25,7 @@ struct TrackInfo
     float sibP50 = -45, sibP95 = -45, sibPerMin = 0, sibSeconds = 0, sibHz = 6500;
     // transients, measured by The Servant: how far its hits jump over its own body (95th percentile, dB)
     float transP95 = 0, transSeconds = 0;
+    float lpf = 20000;                          // The Servant's own low-pass: nothing above it is worth boosting
 };
 
 struct TrackPlan
@@ -154,6 +155,8 @@ inline TracksResult planTracks (const Features& mix, const GenreProfile& g, std:
         {
             const double s = c[i][(size_t) b] / tot[(size_t) b];
             if (s < 0.03) continue;                               // barely in this band: leave it alone
+            // never boost what the track's own clean-up filters out (an amp sim's fizz above its low-pass)
+            if (! cut && std::sqrt (bandDefs()[(size_t) b].lo * bandDefs()[(size_t) b].hi) > tracks[i].lpf * 0.85f) continue;
             w[i] = s * roleFactor (plans[i].role, b, cut);
             wsum += w[i];
         }

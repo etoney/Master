@@ -1308,17 +1308,15 @@ MasterEditor::MasterEditor (MasterProcessor& p) : AudioProcessorEditor (&p), pro
     };
     addChildComponent (nextButton);
     stepList.setInterceptsMouseClicks (false, false);
-    newRxButton.setTooltip ("Start over after big changes to the mix: bypass the bus plugins, press RESET and play the song, then press this. "
+    newRxButton.setTooltip ("Start over after big changes to the mix: every Mix System plugin goes back to neutral, then play the song and press GO TO FIX. "
                             "(For plugins you've added or removed, the main button says UPDATE: no need to start over.)");
     newRxButton.onClick = [this]
     {
-        juce::Component::SafePointer<MasterEditor> safe (this);
-        proc.requestPrescribe ([safe] (const juce::String& err)
-        {
-            if (safe == nullptr) return;
-            if (err.isNotEmpty()) safe->showMessage ("NOT YET", err);
-            safe->lastChainSig = -1;
-        });
+        proc.startOver();
+        lastChainSig = -1;
+        setPage (0);
+        showMessage ("STARTING OVER", "Every Mix System plugin is back to neutral, so The Master hears your mix as it really is. "
+                                      "Play the song from the top (the whole song is best), then press GO TO FIX.");
     };
     chainView.setInterceptsMouseClicks (false, true);   // the YOUR TRACKS list scrolls
     logViewport.setViewedComponent (&changeLog, false);

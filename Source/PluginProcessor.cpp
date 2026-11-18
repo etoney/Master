@@ -356,8 +356,13 @@ MasterProcessor::Target MasterProcessor::resolveTarget (const mst::Features& fx)
     Target t;
     const auto& genres = library.genres();
     t.guesses = mst::detectGenre (fx, genres);
-    const int chosen = genreChoice == "auto" ? -1 : library.indexOf (genreChoice);
-    if (chosen >= 0) { t.index = chosen; t.automatic = false; }
+    int chosen = genreChoice == "auto" ? -1 : library.indexOf (genreChoice);
+    // AUTO with a prescription in place: keep judging against the genre it aimed at. (Heard through the
+    // prescribed plugins, the mix can sound like a different genre, and the score would jump around.)
+    if (chosen < 0 && chainPlan.valid && chainStage >= 1)
+        for (int i = 0; i < (int) genres.size(); ++i)
+            if (genres[(size_t) i].name == chainPlan.genreName) { chosen = i; break; }
+    if (chosen >= 0) { t.index = chosen; t.automatic = genreChoice == "auto"; }
     else if (! t.guesses.empty()) t.index = t.guesses.front().index;
     else t.index = genres.empty() ? -1 : 0;
     return t;
@@ -623,11 +628,52 @@ void MasterProcessor::sendSet (const juce::String& peerId, const std::map<juce::
     link->send (m, peerId);
 }
 
+void MasterProcessor::startOver()
+{
+    // pass-through settings: nothing these plugins do changes the level or tone while The Master listens again
+    static const std::map<juce::String, std::map<juce::String, float>> neutral {
+        { "chopshop",   { { "inputDb", 0.0f }, { "outputDb", 0.0f }, { "mix", 0.0f }, { "color", 0.0f }, { "gainMatch", 0.0f } } },
+        { "dominatrix", { { "discipline", 0.0f }, { "saturation", 0.0f }, { "analog", 0.0f }, { "width", 100.0f }, { "bassMono", 0.0f },
+                          { "outputDb", 0.0f }, { "ceiling", 2.0f }, { "match", 0.0f }, { "mix", 100.0f } } },
+        { "freak",      { { "amount", 0.0f }, { "output", 0.0f } } },
+        { "servant",    { { "toneOn", 0.0f }, { "compOn", 0.0f }, { "transOn", 0.0f }, { "deessOn", 0.0f }, { "trim", 0.0f } } },
+        { "lowblow",    { { "depth", 0.0f } } },
+        { "flatliner",  { { "ride", 0.0f }, { "output", 0.0f } } } };
+    if (link)
+        for (auto& [id, p] : peers)
+            if (auto it = neutral.find (p.kind); it != neutral.end())
+                sendSet (id, it->second, "The Master: START OVER (back to neutral)");
+    setParam ("fixOn", 0.0f);
+    chainPlan = {};
+    chainStage = 0;
+    chainLog.clear();
+    resetAnalysis();
+    ++linkVersion;
+}
+
 juce::String MasterProcessor::prescribe (bool fromFrozen)
 {
     bool saved = false;
     auto in = fromFrozen && chainPlan.valid ? chainPlan.before : getDisplayFeatures (saved);
     if (! in.valid) return "Play the whole song first (with no plugins on the master bus before The Master), then press PRESCRIBE.";
+    if (! fromFrozen)
+    {
+        // a fresh prescription has to hear the mix itself, not the mix through an earlier prescription
+        bool tainted = false;
+        for (auto& [id, p] : peers)
+        {
+            if (isTrackPeer (id)) continue;
+            if (p.kind == "dominatrix" && std::abs ((double) p.params.getProperty ("outputDb", 0.0)) > 1.0) tainted = true;
+            if (p.kind == "chopshop" && (double) p.extra.getProperty ("seconds", 0.0) >= 5.0 && (double) p.params.getProperty ("mix", 0.0) > 0.0
+                && (double) p.extra.getProperty ("songPeakDb", -100.0) > in.samplePeak + 2.0) tainted = true;
+        }
+        if (tainted)
+        {
+            startOver();
+            return "The plugins on the master bus were still set from an earlier prescription, so The Master put every Mix System plugin back to neutral. "
+                   "Play the song again from the top, then press GO TO FIX.";
+        }
+    }
     const auto target = resolveTarget (in);
     const auto& genres = library.genres();
     if (target.index < 0 || target.index >= (int) genres.size()) return "No genre profile to aim for.";
@@ -651,6 +697,7 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
         for (int b = 0; b < mst::kNumBands; ++b) t.bandPow[(size_t) b] = (double) (*bp)[b];
         t.pow = p.extra.getProperty ("pow", 0.0);
         t.seconds = p.extra.getProperty ("seconds", 0.0);
+        t.lpf = (float) (double) p.params.getProperty ("lpf", 20000.0);
         if (auto sib = p.extra.getProperty ("sib", {}); sib.isObject())
         {
             t.sibP50 = (float) (double) sib.getProperty ("p50", -45.0); t.sibP95 = (float) (double) sib.getProperty ("p95", -45.0);

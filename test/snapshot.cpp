@@ -475,6 +475,17 @@ int main (int argc, char** argv)
         check (deWhy, "the reason names how far the s sounds jump and where the split is");
         check (res.tracks[0].params.at ("toneOn") == 1.0f && std::abs (res.tracks[0].params.at ("t1g") - res.tracks[0].eq[3]) < 0.01f, "the biggest move goes on The Servant's band 1");
 
+        // a dark mix: nothing gets boosted above a track's own low-pass (an amp sim's fizz)
+        {
+            auto dark = mix; dark.band[8] -= 10.0f; dark.band[9] -= 12.0f;
+            auto lp = tr; lp[0].lpf = 10700.0f;
+            const auto open = mst::planTracks (dark, rock, tr, mixS);
+            const auto shut = mst::planTracks (dark, rock, lp, mixS);
+            check (open.tracks[0].eq[8] > 0.5f, juce::String::formatted ("a dark mix: an open guitar takes some sheen (%+.1f dB)", open.tracks[0].eq[8]));
+            check (shut.tracks[0].eq[8] == 0.0f && shut.tracks[0].eq[9] == 0.0f && shut.tracks[0].eq[6] >= 0.0f,
+                   juce::String::formatted ("a guitar low-passed at 10.7 kHz gets no sheen or air boost (%+.1f, %+.1f dB)", shut.tracks[0].eq[8], shut.tracks[0].eq[9]));
+        }
+
         // BACKING VOCALS: sit under the lead, SMOOTH, de-essable
         {
             auto withBv = tr;
@@ -1183,6 +1194,33 @@ int main (int argc, char** argv)
         check (p.getChainPlan().headroom && dom.sets > domSetsBefore && std::abs (dom.params["ceiling"] - 1.0) < 0.01
                && std::abs (p.currentFixParams().ceilingDb + 6.0f) < 0.01f && p.getChainPlan().tracks.size() == cp.tracks.size(),
                juce::String::formatted ("OUTPUT -6 dB after APPLY: Dominatrix CEILING -6 dB, OUTPUT %.1f dB, safety limiter -6 dBTP, tracks kept", dom.params["outputDb"]));
+
+        // AUTO keeps judging against the prescription's genre, whatever the processed mix now sounds like
+        {
+            auto t = p.resolveTarget (p.getChainPlan().before);
+            check (t.index >= 0 && p.getLibrary().genres()[(size_t) t.index].name == p.getChainPlan().genreName, "with a prescription in place, AUTO stays on its genre");
+        }
+
+        // START OVER: every Mix System plugin back to neutral, the prescription cleared
+        {
+            dom.params["outputDb"] = 10.7; chop.params["ceilingDb"] = -17.0; chop.params["mix"] = 100.0;
+            const int ds = dom.sets, cs = chop.sets, gs = gtr.sets;
+            p.startOver();
+            for (int i = 0; i < 40 && (dom.sets == ds || chop.sets == cs || gtr.sets == gs); ++i) pump (50);
+            check (p.getChainStage() == 0 && ! p.getChainPlan().valid && ! p.isFixOn(), "START OVER clears the prescription and turns The Master's own fix off");
+            check (std::abs (dom.params["outputDb"]) < 0.01 && std::abs (dom.params["ceiling"] - 2.0) < 0.01 && std::abs (dom.params["discipline"]) < 0.01
+                   && std::abs (chop.params["mix"]) < 0.01 && std::abs (gtr.params["toneOn"]) < 0.01 && std::abs (gtr.params["compOn"]) < 0.01,
+                   "START OVER puts Dominatrix, Chop Shop and The Servants back to pass-through");
+            // a fresh prescription through a Dominatrix still turned up refuses, and starts over by itself
+            p.setNonRealtime (true);
+            play (12.0, false);
+            p.getWorker().waitUntilIdle (8000);
+            pump (300);
+            dom.params["outputDb"] = 8.0;
+            pump (600);
+            const auto err = p.prescribe (false);
+            check (err.contains ("back to neutral") && ! p.getChainPlan().valid, "GO TO FIX through bus plugins still set from before: they go back to neutral first (" + err.substring (0, 40) + ")");
+        }
         pinger.stopTimer();
     }
 
