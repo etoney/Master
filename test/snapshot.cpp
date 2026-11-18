@@ -961,7 +961,7 @@ int main (int argc, char** argv)
         p.setNonRealtime (true);
         play (18.0, false);
         p.setNonRealtime (false);
-        for (int round = 0; round < 40; ++round) { play (0.3, true); pump (20); }   // a little real-time playback so the fingerprints line up
+        for (int round = 0; round < 70; ++round) { play (0.3, true); pump (20); }   // a little real-time playback so the fingerprints line up
         p.getWorker().waitUntilIdle (8000);
         check (p.applyChain().isNotEmpty(), "APPLY needs a prescription first");
         {
