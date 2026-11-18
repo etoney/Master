@@ -32,6 +32,14 @@ inline TrackPlan makeHelperPlan (const HelperInfo& h, const juce::String& fallba
 // BUZZKILL: it learns the noise by itself. The Master picks how tight it closes, from the genre
 // (metal and punk palm mutes want a hard stop, pop and ballads want tails), the part (a lead's
 // sustain breathes, a rhythm part chugs) and how noisy the track really is.
+// a track whose noise is too quiet to hear: BuzzKill has nothing to remove there
+constexpr double kCleanFloorDb = -75.0;
+inline bool buzzKillClean (const juce::var& extra)
+{
+    const double floorDb = extra.getProperty ("floorDb", -120.0);
+    return floorDb > -119.0 && floorDb < kCleanFloorDb;
+}
+
 inline TrackPlan planBuzzKill (const HelperInfo& h, const Features& mix, const GenreProfile& g)
 {
     auto p = makeHelperPlan (h, "Guitar track");
@@ -59,6 +67,14 @@ inline TrackPlan planBuzzKill (const HelperInfo& h, const Features& mix, const G
     p.params["release"] = rel;
     p.params["listen"] = 0.0f;   // HEAR REMOVED off: never print the noise by mistake
     p.why.add ("RELEASE " + juce::String (juce::roundToInt (rel * 100.0f)) + "%: " + style + ".");
+    if (buzzKillClean (h.extra))
+    {
+        p.why.add ("CLEAN: this track's noise sits at " + juce::String (floorDb, 0) + " dBFS, far too quiet to hear, so BuzzKill has nothing to remove here."
+                   + (mix.humSeconds >= 1.0f ? juce::String (" The mix's " + juce::String (mix.humHz) + " Hz hum comes from another track.") : juce::String()));
+        p.why.add ("HEAR REMOVED: OFF (so you never print the noise by mistake).");
+        p.note = "RELEASE " + juce::String (juce::roundToInt (rel * 100.0f)) + "%  //  CLEAN, NOTHING TO REMOVE";
+        return p;
+    }
     if (mix.humSeconds >= 1.0f)
         p.why.add ("The mix has " + juce::String (mix.humHz) + " Hz hum in its quiet parts (" + juce::String ((int) mix.humSeconds)
                    + " s). BuzzKill removes it here, at the source, so The Master doesn't have to notch the whole mix.");

@@ -783,6 +783,11 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
         else if (h.kind == "buzzkill") { chainPlan.tracks.push_back (mst::planBuzzKill (h, in, G)); anyBuzz = true; }
         else                      { chainPlan.tracks.push_back (mst::planFlatliner (h, G)); anyFlat = true; }
     }
+    auto hasOnTrack = [&] (const juce::String& kind, const juce::String& track)
+    {
+        for (auto& t : chainPlan.tracks) if (t.kind == kind && t.name.equalsIgnoreCase (track)) return true;
+        return false;
+    };
     // the advice for the tracks: what's linked now does the job; ask for what's missing
     for (int i = chainPlan.onTracks.size(); --i >= 0;)
     {
@@ -790,6 +795,71 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
         else if (anyFlat && chainPlan.onTracks[i].startsWith ("FLATLINER")) chainPlan.onTracks.remove (i);
     }
     if (anyBuzz) chainPlan.removeAdds ("buzzkill");
+    // THE SERVANTS' EARS: each one checks its own track's quiet parts for hum and noise, so BuzzKill goes
+    // on exactly the tracks that need it. (The Master hears the hum in the mix; the Servants say where from.)
+    struct Heard { juce::String name; int hz = 0; float db = 0, floorDb = -120; int sec = 0; };
+    std::vector<Heard> humTracks, cleanTracks;
+    int servantsHeard = 0;
+    for (auto& [id, p] : peers)
+    {
+        if (p.kind != "servant") continue;
+        const auto nz = p.extra.getProperty ("noise", {});
+        if (! nz.isObject() || (int) nz.getProperty ("seconds", 0) < 5) continue;
+        ++servantsHeard;
+        Heard h { p.extra.getProperty ("track", "").toString(), (int) nz.getProperty ("humHz", 0), (float) (double) nz.getProperty ("humDb", 0.0),
+                  (float) (double) nz.getProperty ("floorDb", -120.0), (int) nz.getProperty ("humSeconds", 0) };
+        if (h.sec >= 2) humTracks.push_back (h);
+        else if (h.floorDb < (float) mst::kCleanFloorDb) cleanTracks.push_back (h);
+    }
+    auto findIn = [] (const std::vector<Heard>& v, const juce::String& name) -> const Heard*
+    {
+        for (auto& h : v) if (h.name.equalsIgnoreCase (name)) return &h;
+        return nullptr;
+    };
+    for (auto& t : chainPlan.tracks)
+    {
+        if (t.kind != "buzzkill") continue;
+        if (auto* h = findIn (humTracks, t.name))
+            t.why.insert (1, "The Servant on this track hears " + juce::String (h->hz) + " Hz hum in its quiet parts (" + juce::String (h->sec)
+                              + " s, " + juce::String (h->db, 0) + " dB over the noise around it): this is a track to clean.");
+        else if (auto* c = findIn (cleanTracks, t.name); c != nullptr && t.note.contains ("NOT LEARNED"))
+        {
+            for (int w = t.why.size(); --w >= 0;) if (t.why[w].startsWith ("BuzzKill hasn't heard") || t.why[w].startsWith ("The mix has")) t.why.remove (w);
+            t.why.insert (1, "CLEAN: The Servant on this track hears no hum, and its noise sits at " + juce::String (c->floorDb, 0)
+                              + " dBFS, far too quiet to hear. BuzzKill has nothing to remove here.");
+            t.note = t.note.upToFirstOccurrenceOf ("  //", false, false) + "  //  CLEAN, NOTHING TO REMOVE";
+        }
+    }
+    if (servantsHeard > 0)
+    {
+        chainPlan.removeAdds ("buzzkill");
+        for (auto& h : humTracks)
+            if (! hasOnTrack ("buzzkill", h.name))
+                chainPlan.adds.push_back ({ "buzzkill", h.name, "The Servant on this track hears " + juce::String (h.hz) + " Hz hum in its quiet parts ("
+                                            + juce::String (h.sec) + " s). Put BuzzKill first on the track (right after the amp sim or DI), then press UPDATE." });
+        if (humTracks.empty() && in.humSeconds >= 1.0f)
+            chainPlan.adds.push_back ({ "servant", "The track with the hum", juce::String (in.humHz) + " Hz hum in the mix, but none of your Servants hears it on its own track: "
+                                        "it's on a track without The Servant (or on a bus). Put The Servant there, play the song, and The Master will point BuzzKill at it." });
+    }
+    else if (in.humSeconds >= 1.0f && anyBuzz)
+    {   // older Servants (no noise report): if every BuzzKill sits on a clean track, point at the others, the bass first
+        bool anyNoisy = false;
+        for (auto& h : helpers) if (h.kind == "buzzkill" && ! mst::buzzKillClean (h.extra)) anyNoisy = true;
+        if (! anyNoisy)
+        {
+            std::vector<std::pair<int, juce::String>> want;
+            for (auto& t : tracks)
+            {
+                if (hasOnTrack ("buzzkill", t.name)) continue;
+                if (mst::roleIs (t.role, { "Bass" })) want.push_back ({ 0, t.name });
+                else if (t.role.containsIgnoreCase ("Guitar")) want.push_back ({ 1, t.name });
+            }
+            std::sort (want.begin(), want.end());
+            for (auto& [rank, name] : want)
+                chainPlan.adds.push_back ({ "buzzkill", name, juce::String (in.humHz) + " Hz hum in the mix's quiet parts, and the BuzzKills you have are on clean tracks. "
+                                            + juce::String (rank == 0 ? "A bass DI is the usual source: " : "") + "put BuzzKill first on this track, then press UPDATE." });
+        }
+    }
     // drum tracks that make the mix's peaks: a clipper on the track beats compressing them
     auto hasOn = [&] (const juce::String& kind, const juce::String& track)
     {

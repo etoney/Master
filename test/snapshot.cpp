@@ -703,6 +703,10 @@ int main (int argc, char** argv)
         check (bm.params.at ("listen") == 0.0f && bm.why.joinIntoString (" ").contains ("60 Hz hum"), "BuzzKill: HEAR REMOVED off, and the mix's hum is the reason");
         auto noisy = bk; noisy.extra = ex ({ { "floorDb", -45.0 }, { "playDb", -20.0 }, { "seconds", 30.0 }, { "learned", true } });
         check (mst::planBuzzKill (noisy, mix, pop).params.at ("release") > bp.params.at ("release"), "BuzzKill closes sooner on a noisy track");
+        auto quietGtr = bk; quietGtr.extra = ex ({ { "floorDb", -90.0 }, { "playDb", -120.0 }, { "seconds", 0.0 }, { "learned", false } });
+        const auto qp = mst::planBuzzKill (quietGtr, mix, pop);
+        check (qp.note.contains ("CLEAN") && ! qp.note.contains ("NOT LEARNED") && qp.why.joinIntoString (" ").contains ("another track"),
+               "BuzzKill on a near-silent guitar: CLEAN, nothing to remove (not NOT LEARNED), and the hum is from another track");
 
         mst::HelperInfo fl { "f1", "flatliner", "Lead Vox", "Lead", ex ({ { "p10", -34.0 }, { "p50", -22.0 }, { "p90", -14.0 }, { "floorDb", -70.0 }, { "seconds", 60.0 } }) };
         auto fp = mst::planFlatliner (fl, pop);
@@ -963,6 +967,12 @@ int main (int argc, char** argv)
             }
             juce::Array<juce::var> b; double tot = 0; for (auto v : bands) { b.add (v); tot += v; }
             o->setProperty ("bandPow", b); o->setProperty ("pow", tot);
+            // what each Servant hears in its track's quiet parts: hum on the vocal mic, the guitar is clean
+            auto* nz = new juce::DynamicObject();
+            const bool hum = juce::String (role) == "Lead";
+            nz->setProperty ("seconds", 30); nz->setProperty ("quietSeconds", 6); nz->setProperty ("floorDb", hum ? -58.0 : -91.0);
+            nz->setProperty ("humSeconds", hum ? 5 : 0); nz->setProperty ("humHz", hum ? 60 : 0); nz->setProperty ("humDb", hum ? 22.0 : 0.0);
+            o->setProperty ("noise", juce::var (nz));
             return juce::var (o);
         };
         auto gtrX = [&] { return servantExtra ("Rhythm Gtr", "Rhythm", { 0.001, 0.01, 0.05, 0.08, 0.04, 0.02, 0.01, 0.003, 0.001, 0.0005 }); };
@@ -1019,6 +1029,11 @@ int main (int argc, char** argv)
             if (hasFreak) for (int b = 1; b <= 6; ++b) if (cp.step ("freak")->params.at ("b" + juce::String (b) + "on") > 0.5f)
                 fb.add (juce::String (cp.step ("freak")->params.at ("b" + juce::String (b) + "f"), 0) + " Hz " + juce::String (cp.step ("freak")->params.at ("b" + juce::String (b) + "d"), 0) + " dB");
             std::printf ("       (drum mix: The Freak %s)\n", hasFreak ? fb.joinIntoString (", ").toRawUTF8() : "not needed");
+        }
+        {
+            bool voxAdd = false, generic = false;
+            for (auto& ad : cp.adds) if (ad.kind == "buzzkill") { if (ad.track == "Lead Vox" && ad.why.contains ("60 Hz hum")) voxAdd = true; if (ad.track.isEmpty()) generic = true; }
+            check (voxAdd && ! generic, "the Servants say where the hum is: BuzzKill asked for on Lead Vox only, not on every guitar and bass track");
         }
         check (cp.step ("dominatrix")->params.at ("outputDb") > 3.0f && cp.step ("dominatrix")->params.at ("ceiling") == 0.0f, "Dominatrix: OUTPUT drives into the -1 dB ceiling");
         check (cp.step ("chopshop")->params.at ("ceilingDb") < cp.before.samplePeak - 1.0f && cp.step ("chopshop")->params.at ("shape") == 1.0f, "Chop Shop: soft ceiling under the loudest peaks");
