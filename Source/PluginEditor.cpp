@@ -1180,10 +1180,12 @@ bool MasterDialog::keyPressed (const juce::KeyPress& k)
 
 void MasterDialog::resized()
 {
-    panel = getLocalBounds().withSizeKeepingCentre (460, 200);
+    const bool big = message.length() > 220 || buttons.size() > 2;
+    panel = getLocalBounds().withSizeKeepingCentre (big ? 560 : 460, big ? 230 : 200);
     auto r = panel.reduced (22);
     auto row = r.removeFromBottom (28);
-    for (int i = (int) buttons.size() - 1; i >= 0; --i) { buttons[i]->setBounds (row.removeFromRight (100)); row.removeFromRight (8); }
+    const int bw = buttons.size() > 2 ? 136 : 100;
+    for (int i = (int) buttons.size() - 1; i >= 0; --i) { buttons[i]->setBounds (row.removeFromRight (bw)); row.removeFromRight (8); }
 }
 
 void MasterDialog::paint (juce::Graphics& g)
@@ -1204,7 +1206,7 @@ void MasterDialog::paint (juce::Graphics& g)
     g.setColour (pal::signalHot); g.setFont (tex::stencil (19.0f).withExtraKerningFactor (0.1f));
     g.drawText (title, r.removeFromTop (30), juce::Justification::centredLeft);
     g.setColour (pal::paint); g.setFont (tex::plainBold (13.0f));
-    g.drawFittedText (message, r.removeFromTop (100), juce::Justification::topLeft, 6);
+    g.drawFittedText (message, r.withTrimmedBottom (36), juce::Justification::topLeft, 12);
 }
 
 //==============================================================================
@@ -1217,8 +1219,28 @@ MasterEditor::MasterEditor (MasterProcessor& p) : AudioProcessorEditor (&p), pro
     listenButton.setTooltip ("While LISTEN is on, The Master analyses everything that plays through it. Turn it off to freeze the report (you can automate it to analyse just one section).");
     addAndMakeVisible (listenButton);
     listenAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, "listen", listenButton);
-    resetButton.setTooltip ("Forget everything heard so far and start a fresh analysis.");
-    resetButton.onClick = [this] { proc.resetAnalysis(); lastSnap = -1; };
+    resetButton.setTooltip ("Start again: forget everything heard so far. With a prescription in place it asks whether to start over from scratch "
+                            "(plugins back to neutral) or just measure again.");
+    resetButton.onClick = [this]
+    {
+        if (proc.getChainStage() == 0) { proc.resetAnalysis(); reportAfter = false; reportSel.setIndex (0); lastSnap = -1; setPage (0); return; }
+        juce::Component::SafePointer<MasterEditor> safe (this);
+        dialog = std::make_unique<MasterDialog> ("RESET",
+            "START OVER: every Mix System plugin goes back to neutral and the prescription is cleared, so you begin again at LISTEN.\n\n"
+            "MEASURE AGAIN: your settings stay; The Master just forgets what it heard, so the next play-through scores the result (and REFINE works from it).",
+            juce::StringArray { "START OVER", "MEASURE AGAIN", "CANCEL" }, [safe] (int i)
+            {
+                juce::MessageManager::callAsync ([safe, i]
+                {
+                    if (safe == nullptr) return;
+                    safe->dialog.reset();
+                    if (i == 0) safe->startOverNow();
+                    else if (i == 1) { safe->proc.resetAnalysis(); safe->lastSnap = -1; }
+                });
+            });
+        addAndMakeVisible (*dialog);
+        dialog->setBounds (getLocalBounds());
+    };
     profilesButton.setTooltip ("Genre profiles: import an updated profile pack, open the profiles folder, or go back to the factory profiles. (Hold SHIFT for the admin tools.)");
     profilesButton.onClick = [this] { showProfilesMenu(); };
     copyButton.setTooltip ("Copy the whole report as text, to paste into notes or send to someone.");
@@ -1341,15 +1363,7 @@ MasterEditor::MasterEditor (MasterProcessor& p) : AudioProcessorEditor (&p), pro
     stepList.setInterceptsMouseClicks (false, false);
     newRxButton.setTooltip ("Start over after big changes to the mix: every Mix System plugin goes back to neutral, then play the song and press GO TO FIX. "
                             "(For plugins you've added or removed, the main button says UPDATE: no need to start over.)");
-    newRxButton.onClick = [this]
-    {
-        proc.startOver();
-        lastChainSig = -1;
-        reportAfter = false; reportSel.setIndex (0);
-        setPage (0);
-        showMessage ("STARTING OVER", "Every Mix System plugin is back to neutral, so The Master hears your mix as it really is. "
-                                      "Play the song from the top (the whole song is best), then press GO TO FIX.");
-    };
+    newRxButton.onClick = [this] { startOverNow(); };
     chainView.setInterceptsMouseClicks (false, true);   // the YOUR TRACKS list scrolls
     logViewport.setViewedComponent (&changeLog, false);
     logViewport.setScrollBarsShown (true, false);
@@ -1454,6 +1468,17 @@ juce::String MasterEditor::chainButtonText() const
     if (st == 0) return "PRESCRIBE";
     if (proc.chainOutdated()) return "UPDATE";
     return st == 1 ? "APPLY" : "REFINE";
+}
+
+void MasterEditor::startOverNow()
+{
+    proc.startOver();
+    lastChainSig = -1; lastSnap = -1; lastLinkVersion = -1;
+    reportAfter = false; reportSel.setIndex (0);
+    changeLog.setEntries (proc.getLog(), logViewport.getWidth() - 12, "Nothing changed yet.");
+    setPage (0);
+    showMessage ("STARTING OVER", "Every Mix System plugin is back to neutral and the prescription is cleared, so The Master hears your mix as it really is. "
+                                  "Play the song from the top (the whole song is best), then press GO TO FIX.");
 }
 
 void MasterEditor::updateSteps()

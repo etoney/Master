@@ -1201,6 +1201,17 @@ int main (int argc, char** argv)
             check (t.index >= 0 && p.getLibrary().genres()[(size_t) t.index].name == p.getChainPlan().genreName, "with a prescription in place, AUTO stays on its genre");
         }
 
+        // RESET with a prescription in place asks: start over, or just measure again
+        {
+            std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
+            auto* me = dynamic_cast<MasterEditor*> (ed.get());
+            me->showPage (1);
+            me->pressReset();
+            pump (300);
+            check (me->dialogOpen() && p.getChainStage() >= 1, "RESET with a prescription asks START OVER / MEASURE AGAIN (and changes nothing yet)");
+            check (writePng (ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f), dir.getChildFile ("gui_reset_dialog.png")), "RESET dialog");
+        }
+
         // START OVER: every Mix System plugin back to neutral, the prescription cleared
         {
             dom.params["outputDb"] = 10.7; chop.params["ceilingDb"] = -17.0; chop.params["mix"] = 100.0;

@@ -54,7 +54,10 @@ ANALYSIS (top right)
 -------------------------------------------------------------------------------
   LISTEN    On: everything that plays is analysed. Off: the report freezes.
             You can automate LISTEN to analyse only one part of the song.
-  RESET     Forget what's been heard and start a new analysis.
+  RESET     Forget what's been heard and start a new analysis. Once there's a
+            prescription it asks: START OVER (plugins back to neutral, back to
+            LISTEN) or MEASURE AGAIN (settings stay; the next play-through is
+            scored and REFINE works from it).
   PROFILES  Import an updated genre profile pack, open the profiles folder,
             or go back to the factory profiles.
 

@@ -237,6 +237,8 @@ public:
     void refreshNow() { lastSnap = -1; timerCallback(); }
     void showPage (int p) { setPage (p); refreshNow(); }
     void pressAutoFix() { nextButton.triggerClick(); }
+    void pressReset() { resetButton.triggerClick(); }
+    bool dialogOpen() const { return dialog != nullptr; }
     juce::String mainButtonText() const { return nextButton.getButtonText(); }
 
 private:
@@ -302,6 +304,7 @@ private:
     StepBar stepBar;
     void updateSteps();
     void runNextButton();
+    void startOverNow();
     Selector reportSel { nullptr, { "YOUR MIX", "AFTER FIXES" }, 14.0f };
     juce::TextButton autoFixButton { "AUTO FIX" };
     juce::ToggleButton fixOnButton { "FIXES ON" }, matchButton { "MATCH LEVELS (A/B)" }, bassMonoButton { "BASS MONO" };
