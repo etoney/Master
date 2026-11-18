@@ -48,7 +48,7 @@ jobs:
             cmake -B build -DCMAKE_BUILD_TYPE=Release
           fi
       - name: Build
-        run: cmake --build build --config Release --target TheMaster_VST3 TheMaster_Standalone TheMasterProfiler
+        run: cmake --build build --config Release --target TheMaster_VST3 TheMasterProfiler
       - name: Build AU (macOS)
         if: runner.os == 'macOS'
         run: cmake --build build --config Release --target TheMaster_AU
@@ -57,7 +57,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          for b in build/*_artefacts/Release/VST3/*.vst3 build/*_artefacts/Release/AU/*.component build/*_artefacts/Release/Standalone/*.app; do
+          for b in build/*_artefacts/Release/VST3/*.vst3 build/*_artefacts/Release/AU/*.component; do
             [ -e "$b" ] || continue
             n=$(basename "$b"); n="${n%.*}"
             bin="$b/Contents/MacOS/$n"
@@ -73,15 +73,13 @@ jobs:
           OS=$([ "$RUNNER_OS" = "macOS" ] && echo macOS || echo Windows)
           ZIP="TheMaster-v${VER}-${OS}.zip"
           R=build/TheMaster_artefacts/Release
-          mkdir -p pkg/TheMaster/VST3 pkg/TheMaster/Standalone
+          mkdir -p pkg/TheMaster/VST3
           cp readme.txt controls.txt LICENSE.txt THIRD-PARTY-NOTICES.txt pkg/TheMaster/
           cp -R "$R/VST3/The Master.vst3" pkg/TheMaster/VST3/
           if [ "$OS" = "macOS" ]; then
             mkdir -p pkg/TheMaster/AU && cp -R "$R/AU/The Master.component" pkg/TheMaster/AU/
-            cp -R "$R/Standalone/The Master.app" pkg/TheMaster/Standalone/
             (cd pkg && ditto -c -k --sequesterRsrc --keepParent TheMaster "../$ZIP")
           else
-            cp "$R/Standalone/The Master.exe" pkg/TheMaster/Standalone/
             (cd pkg && 7z a -tzip -mx=9 "../$ZIP" TheMaster > /dev/null)   # 7z writes forward-slash paths
           fi
           ls -la "$ZIP"
@@ -102,7 +100,6 @@ jobs:
             THIRD-PARTY-NOTICES.txt
             build/TheMaster_artefacts/Release/VST3
             build/TheMaster_artefacts/Release/AU
-            build/TheMaster_artefacts/Release/Standalone
       - uses: actions/upload-artifact@v4
         with:
           name: TheMasterProfiler-${{ runner.os }}

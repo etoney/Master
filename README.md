@@ -1,6 +1,6 @@
 # The Master
 
-A master-channel mix analyser (VST3 / AU / Standalone) by **Castle Danger Music Company**.
+A master-channel mix analyser (VST3 / AU) by **Castle Danger Music Company**.
 
 The Master listens to the finished mix, compares it with genre profiles (what records in the genre measure), and gives plain-English mixing advice, pointing at Castle Danger plugins where one does the job (Dominatrix, Chop Shop, Flatliner, BuzzKill). On the **FIX IT** page, **AUTO FIX** applies the corrections itself (tone-match EQ, leveler, peak tamer, width / bass mono, hum notches, loudness into a true-peak limiter), and every correction can be overridden. It runs fully offline.
 
@@ -18,7 +18,7 @@ See `controls.txt` for the user guide and `readme.txt` for installing.
 
 ## Building
 
-Pushing to `main` runs GitHub Actions, which builds macOS (VST3 + AU + Standalone, universal) and Windows (VST3 + Standalone), then:
+Pushing to `main` runs GitHub Actions, which builds macOS (VST3 + AU, universal) and Windows (VST3), then:
 
 - uploads the builds and the `TheMasterProfiler` admin tool as workflow artifacts, and
 - pushes the release zips to the `downloads-macos` / `downloads-windows` branches.
