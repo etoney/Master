@@ -102,37 +102,57 @@ inline float leadSwingDb (const std::vector<float>& series)
     return act[act.size() * 9 / 10] - act[act.size() / 10];
 }
 
-// Flatliner, where it's needed: vocals that jump around. When the vocal is spread over several
-// tracks (doubles, comps, harmonies, gang vocals), ride them together on a vocal bus; one lead
-// on its own track. Returns { where, why }, both empty when nothing swings.
-inline std::pair<juce::String, juce::String> flatlinerAdvice (const std::vector<TrackInfo>& tracks)
+// A bus or track whose name says backing vocals ("BVox Bus", "BGV", "Harmonies", "Gang Vox").
+inline bool backingName (const juce::String& n)
 {
-    std::vector<size_t> vox;
-    int leadIdx = -1;
+    for (auto* k : { "bvox", "bv ", "bgv", "back", "harm", "choir", "gang", "bus bv", "bv bus" })
+        if (n.containsIgnoreCase (k)) return true;
+    return n.trim().equalsIgnoreCase ("bv") || n.startsWithIgnoreCase ("bv");
+}
+
+// Flatliner, where it's needed: vocals that jump around. Lead and backing are ridden apart, so the
+// ride never lifts the backing vocals up to the lead when they sing alone:
+//  - the lead: on its track, or on a LEAD bus when it's spread over several tracks (doubles, comps);
+//  - the backing vocals, when there are several and their level swings: on a BACKING bus, gently.
+struct FlatAdvice { juce::String where, why; bool backing = false; };
+
+inline float swingOfSum (const std::vector<TrackInfo>& tracks, const std::vector<size_t>& idx)
+{
+    if (idx.empty()) return 0.0f;
+    const size_t T = tracks[idx[0]].series.size();
+    std::vector<float> sum (T, 0.0f);
+    for (auto i : idx)
+        if (tracks[i].series.size() == T)
+            for (size_t k = 0; k < T; ++k) sum[k] += tracks[i].series[k];
+    return leadSwingDb (sum);
+}
+
+inline std::vector<FlatAdvice> flatlinerAdvice (const std::vector<TrackInfo>& tracks)
+{
+    std::vector<FlatAdvice> out;
+    std::vector<size_t> lead, back;
     for (size_t i = 0; i < tracks.size(); ++i)
     {
-        if (roleIs (tracks[i].role, { "Lead" })) { vox.push_back (i); if (leadIdx < 0) leadIdx = (int) i; }
-        else if (roleIs (tracks[i].role, { "Backing" })) vox.push_back (i);
+        if (roleIs (tracks[i].role, { "Lead Vocal" }) || tracks[i].role == "Lead") lead.push_back (i);
+        else if (roleIs (tracks[i].role, { "Backing" })) back.push_back (i);
     }
-    const float leadSwing = leadIdx >= 0 ? leadSwingDb (tracks[(size_t) leadIdx].series) : 0.0f;
-    float voxSwing = 0;
-    if (vox.size() >= 3)
+    const float leadSwing = swingOfSum (tracks, lead);
+    if (leadSwing > 10.0f)
     {
-        const size_t T = tracks[vox[0]].series.size();
-        std::vector<float> sum (T, 0.0f);
-        for (auto i : vox)
-            if (tracks[i].series.size() == T)
-                for (size_t k = 0; k < T; ++k) sum[k] += tracks[i].series[k];
-        voxSwing = leadSwingDb (sum);
+        if (lead.size() >= 2)
+            out.push_back ({ "a lead vocal bus", "Your lead vocal is spread over " + juce::String ((int) lead.size()) + " tracks and its level swings " + juce::String (leadSwing, 0)
+                             + " dB. Send only the lead tracks to one bus (name it \"Lead Vox Bus\") and put Flatliner on it, then press UPDATE. Keep the backing vocals off this bus, "
+                               "or Flatliner lifts them up to the lead whenever they sing alone." });
+        else
+            out.push_back ({ tracks[lead[0]].name.isNotEmpty() ? tracks[lead[0]].name : juce::String ("the lead"),
+                             "Its level swings " + juce::String (leadSwing, 0) + " dB. Put Flatliner first on the track, then press UPDATE." });
     }
-    const float swing = std::max (leadSwing, voxSwing);
-    if (vox.size() >= 3 && swing > 10.0f)
-        return { "a vocal bus", "Your vocals are spread over " + juce::String ((int) vox.size()) + " tracks and their level swings " + juce::String (swing, 0)
-                                + " dB. Send them all to one vocal bus (name it \"Vox Bus\") and put Flatliner on that bus, then press UPDATE. The Servants stay on the vocal tracks, not on the bus." };
-    if (leadIdx >= 0 && leadSwing > 10.0f)
-        return { tracks[(size_t) leadIdx].name.isNotEmpty() ? tracks[(size_t) leadIdx].name : juce::String ("the lead"),
-                 "Its level swings " + juce::String (leadSwing, 0) + " dB. Put Flatliner first on the track, then press UPDATE." };
-    return {};
+    const float backSwing = swingOfSum (tracks, back);
+    if (back.size() >= 2 && backSwing > 10.0f)
+        out.push_back ({ "a backing vocal bus", "Your " + juce::String ((int) back.size()) + " backing vocal tracks swing " + juce::String (backSwing, 0)
+                         + " dB together. Send them to their own bus (name it \"BVox Bus\") and put Flatliner on it, then press UPDATE. It rides them gently (3 dB at most), "
+                           "so they keep their shape and stay under the lead.", true });
+    return out;
 }
 
 inline TrackPlan planFlatliner (const HelperInfo& h, const GenreProfile& g)
@@ -159,7 +179,8 @@ inline TrackPlan planFlatliner (const HelperInfo& h, const GenreProfile& g)
     else if (G == "punk")     { factor = 0.50f; speed = 40.0f; }
 
     const bool steady = swing < 6.0f;
-    const float range = steady ? 3.0f : juce::jlimit (3.0f, 12.0f, std::round (swing * factor));
+    const bool backingRide = roleIs (h.role, { "Backing" }) || backingName (h.track);   // the backing vocals: ridden gently
+    const float range = steady || backingRide ? 3.0f : juce::jlimit (3.0f, 12.0f, std::round (swing * factor));
     const float target = juce::jlimit (-40.0f, 0.0f, std::round (p50 * 2.0f) / 2.0f);
     float gate = std::max (floor + 6.0f, -80.0f);
     gate = std::min (gate, p10 - 6.0f);
@@ -172,7 +193,9 @@ inline TrackPlan planFlatliner (const HelperInfo& h, const GenreProfile& g)
     p.params["gate"] = gate;
     p.params["output"] = 0.0f;
 
-    p.why.add ("RANGE " + juce::String (range, 0) + " dB: " + (steady
+    p.why.add ("RANGE " + juce::String (range, 0) + " dB: " + (backingRide && ! steady
+               ? juce::String ("backing vocals swing ") + juce::String (swing, 1) + " dB; a gentle ride evens them out but keeps their shape, so they stay under the lead."
+               : steady
                ? juce::String ("the lead is already steady (it swings only ") + juce::String (swing, 1) + " dB), so just a gentle ride."
                : juce::String ("the lead swings ") + juce::String (swing, 1) + " dB between its quiet and loud parts; " + g.name
                  + " keeps the lead steady, with some life left in it."));

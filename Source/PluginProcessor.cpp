@@ -828,7 +828,6 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
     for (int i = chainPlan.onTracks.size(); --i >= 0;)
     {
         if (anyBuzz && chainPlan.onTracks[i].startsWith ("BUZZKILL")) { chainPlan.onTracks.remove (i); chainPlan.removeAdds ("buzzkill"); }
-        else if (anyFlat && chainPlan.onTracks[i].startsWith ("FLATLINER")) chainPlan.onTracks.remove (i);
     }
     if (anyBuzz) chainPlan.removeAdds ("buzzkill");
     // THE SERVANTS' EARS: each one checks its own track's quiet parts for hum and noise, so BuzzKill goes
@@ -920,15 +919,20 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
                                 + juce::String (mst::bandDefs()[(size_t) clash.band].label) + " (" + mst::bandDefs()[(size_t) clash.band].range
                                 + " Hz), " + juce::String (clash.gapDb, 1) + " dB apart. Low Blow ducks the bass under each kick; send the kick to its sidechain, then press UPDATE.");
     }
-    if (! anyFlat)
     {
-        const auto [where, why] = mst::flatlinerAdvice (tracks);
-        if (where.isNotEmpty())
+        // what the linked Flatliners already ride: the lead, the backing vocals
+        bool leadRidden = false, backRidden = false;
+        for (auto& t : chainPlan.tracks)
+            if (t.kind == "flatliner") { if (mst::roleIs (t.role, { "Backing" }) || mst::backingName (t.name)) backRidden = true; else leadRidden = true; }
+        for (int k = chainPlan.onTracks.size(); --k >= 0;) if (chainPlan.onTracks[k].startsWith ("FLATLINER")) chainPlan.onTracks.remove (k);
+        chainPlan.removeAdds ("flatliner");
+        const auto advice = mst::flatlinerAdvice (tracks);
+        for (int k = (int) advice.size(); --k >= 0;)
         {
-            for (int k = chainPlan.onTracks.size(); --k >= 0;) if (chainPlan.onTracks[k].startsWith ("FLATLINER")) chainPlan.onTracks.remove (k);
-            chainPlan.removeAdds ("flatliner");
-            chainPlan.adds.push_back ({ "flatliner", where, why });
-            chainPlan.onTracks.insert (0, "FLATLINER on " + where + ": " + why);
+            const auto& a = advice[(size_t) k];
+            if (a.backing ? backRidden : leadRidden) continue;
+            chainPlan.adds.insert (chainPlan.adds.begin(), { "flatliner", a.where, a.why });
+            chainPlan.onTracks.insert (0, "FLATLINER on " + a.where + ": " + a.why);
         }
     }
     for (int k = busNotes.size(); --k >= 0;) chainPlan.onTracks.insert (0, busNotes[k]);

@@ -523,8 +523,22 @@ int main (int argc, char** argv)
                    juce::String::formatted ("a big stack of backing vocals ends up a little under the lead (lead %+.1f, each backing %+.1f dB)", lt, bt));
             // Flatliner: a lead and its stack, whose level comes and goes -> on a vocal bus
             for (auto& t : stack) if (t.role.startsWith ("Backing")) { auto& sr = t.series; for (size_t k = 0; k < sr.size(); ++k) if ((k / 50) % 2 == 1) sr[k] *= 0.02f; }
-            const auto [fw, fwhy] = mst::flatlinerAdvice (stack);
-            check (fw == "a vocal bus" && fwhy.contains ("17 tracks"), "Flatliner: vocals spread over many tracks that swing get Flatliner on a vocal bus (" + fw + ")");
+            const auto fa = mst::flatlinerAdvice (stack);
+            check (fa.size() == 1 && fa[0].backing && fa[0].where == "a backing vocal bus" && fa[0].why.contains ("16 backing"),
+                   "Flatliner: backing vocals that swing get their own bus, ridden apart from the lead (" + (fa.empty() ? juce::String() : fa[0].where) + ")");
+            auto twoLeads = stack; twoLeads.push_back (tr[2]); twoLeads.back().id = "l2"; twoLeads.back().name = "Lead Vox Dbl";
+            for (auto* t : { &twoLeads[2], &twoLeads.back() }) for (size_t k = 0; k < t->series.size(); ++k) if ((k / 40) % 2 == 1) t->series[k] *= 0.03f;
+            const auto fb = mst::flatlinerAdvice (twoLeads);
+            check (fb.size() == 2 && fb[0].where == "a lead vocal bus" && fb[0].why.contains ("Keep the backing vocals off") && fb[1].backing,
+                   "Flatliner: a lead spread over two tracks gets a lead bus, the backing vocals their own");
+            {
+                mst::HelperInfo h; h.kind = "flatliner"; h.track = "BVox Bus"; h.role = "Lead";
+                h.extra = juce::var (new juce::DynamicObject());
+                for (auto [k, v] : std::initializer_list<std::pair<const char*, double>> { { "p10", -40.0 }, { "p50", -22.0 }, { "p90", -18.0 }, { "floorDb", -70.0 }, { "seconds", 40.0 } })
+                    h.extra.getDynamicObject()->setProperty (k, v);
+                const auto fp = mst::planFlatliner (h, rock);
+                check (fp.params.at ("range") == 3.0f, juce::String::formatted ("Flatliner on a backing vocal bus rides gently (RANGE %.0f dB)", fp.params.at ("range")));
+            }
             {   // a Servant on a drum bus is found from its fingerprint and isn't planned as a track
                 auto withBus = tr;
                 mst::TrackInfo bus; bus.id = "bus"; bus.name = "Drums"; bus.role = "Drums"; bus.seconds = 40;
@@ -541,7 +555,8 @@ int main (int argc, char** argv)
                 check (mst::findBuses (tr).empty(), "ordinary tracks aren't taken for buses");
             }
             auto jumpy = tr; for (size_t k = 0; k < jumpy[2].series.size(); ++k) if ((k / 40) % 2 == 1) jumpy[2].series[k] *= 0.05f;
-            const auto [lw, lwhy] = mst::flatlinerAdvice (jumpy);
+            const auto la = mst::flatlinerAdvice (jumpy);
+            const juce::String lw = la.empty() ? juce::String() : la[0].where;
             check (lw == "Lead Vox", "Flatliner: a single lead that swings gets it on its own track (" + lw + ")");
 
             bool leadUp = rb.tracks[2].trimDb >= 0.0f;
