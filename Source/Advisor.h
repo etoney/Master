@@ -77,7 +77,7 @@ inline void bandAdvice (int b, bool hot, const juce::String& genre, const juce::
             s.title = hot ? "PUSHY UPPER MIDS" : "DISTANT UPPER MIDS";
             s.body = hot ? "1-2 kHz is pushy. This can read as aggressive or as cheap. Check distorted guitars and the vocal around 1.2-1.6 kHz."
                          : "1-2 kHz is laid back, so vocals and guitars lose definition. A little boost on the vocal or guitars around 1.5 kHz brings them forward.";
-            if (! hot && gid == "pop") { s.plugin = plug::flatliner; s.tip = "If the vocal is getting buried, ride it steady with Flatliner before reaching for EQ."; }
+           
             break;
         case 6:
             s.title = hot ? "HARSH PRESENCE" : "DULL PRESENCE";
@@ -85,7 +85,7 @@ inline void bandAdvice (int b, bool hot, const juce::String& genre, const juce::
                          : "2-4 kHz is soft, so vocals and guitars lack bite and the mix sounds far away. Try a 2 dB boost around 3 kHz on the vocal and guitars.";
             s.plugin = plug::dominatrix;
             s.tip = hot ? "TAPE saturation smooths and softens a harsh top end." : "WHIP saturation adds bite and edge.";
-            if (! hot && gid == "pop") { s.plugin = plug::flatliner; s.tip = "If the vocal is the thing that's missing, Flatliner keeps it riding on top of the track."; }
+           
             break;
         case 7:
             s.title = hot ? "SIZZLY / SIBILANT" : "NO EDGE";
@@ -102,7 +102,7 @@ inline void bandAdvice (int b, bool hot, const juce::String& genre, const juce::
         default:
             s.title = hot ? "TOO MUCH AIR" : "NO AIR";
             s.body = hot ? "12-20 kHz is high. If the quiet parts also hiss, it may be noise rather than air."
-                         : "12-20 kHz is low, which can sound closed-in" + juce::String (gid == "pop" ? " (pop usually has plenty of air)" : "") + ". Try a high shelf at 12-16 kHz.";
+                         : juce::String ("12-20 kHz is low, which can sound closed-in. Try a high shelf at 12-16 kHz.");
             if (hot) { s.plugin = plug::buzzKill; s.tip = "If it's amp hiss, put BuzzKill on the guitar tracks."; }
             break;
     }

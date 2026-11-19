@@ -30,7 +30,7 @@ inline TrackPlan makeHelperPlan (const HelperInfo& h, const juce::String& fallba
 
 //------------------------------------------------------------------------------
 // BUZZKILL: it learns the noise by itself. The Master picks how tight it closes, from the genre
-// (metal and punk palm mutes want a hard stop, pop and ballads want tails), the part (a lead's
+// (metal and punk palm mutes want a hard stop, looser genres want tails), the part (a lead's
 // sustain breathes, a rhythm part chugs) and how noisy the track really is.
 // a track whose noise is too quiet to hear: BuzzKill has nothing to remove there
 constexpr double kCleanFloorDb = -75.0;
@@ -50,7 +50,6 @@ inline TrackPlan planBuzzKill (const HelperInfo& h, const Features& mix, const G
     else if (G == "punk")     { rel = 0.65f; style = "tight, for fast stops and chugs in " + g.name; }
     else if (G == "hardrock") { rel = 0.60f; style = "fairly tight, for " + g.name + " riffs"; }
     else if (G == "rock")     { rel = 0.45f; style = "between tight and natural, for " + g.name; }
-    else if (G == "pop")      { rel = 0.30f; style = "natural, so the tails fade gently, like " + g.name + " records"; }
 
     if (roleIs (h.role, { "Lead" }))        { rel -= 0.15f; style << "; a little gentler on a lead so its sustain breathes"; }
     else if (roleIs (h.role, { "Bass" }))   { rel -= 0.10f; style << "; a little gentler on bass so the notes don't choke"; }
@@ -121,8 +120,7 @@ inline TrackPlan planFlatliner (const HelperInfo& h, const GenreProfile& g)
     const auto G = genreKey (g);
 
     float factor = 0.6f, speed = 50.0f;
-    if (G == "pop")           { factor = 0.75f; speed = 60.0f; }
-    else if (G == "metal")    { factor = 0.65f; speed = 55.0f; }
+    if (G == "metal")         { factor = 0.65f; speed = 55.0f; }
     else if (G == "hardrock") { factor = 0.60f; speed = 50.0f; }
     else if (G == "rock")     { factor = 0.55f; speed = 45.0f; }
     else if (G == "punk")     { factor = 0.50f; speed = 40.0f; }
@@ -144,7 +142,7 @@ inline TrackPlan planFlatliner (const HelperInfo& h, const GenreProfile& g)
     p.why.add ("RANGE " + juce::String (range, 0) + " dB: " + (steady
                ? juce::String ("the lead is already steady (it swings only ") + juce::String (swing, 1) + " dB), so just a gentle ride."
                : juce::String ("the lead swings ") + juce::String (swing, 1) + " dB between its quiet and loud parts; " + g.name
-                 + (G == "pop" ? " keeps the vocal very flat." : " keeps the lead steady, with some life left in it.")));
+                 + " keeps the lead steady, with some life left in it."));
     p.why.add ("TARGET " + juce::String (target, 1) + " dB: where the lead already sits on average, so the ride doesn't change its level. "
                "The Servant's TRIM does the balance against the band.");
     p.why.add ("SPEED " + juce::String (juce::roundToInt (speed)) + "%: " + (speed >= 55.0f ? "quick, to catch every word." : "natural, like a patient hand on the fader."));
@@ -207,7 +205,6 @@ inline TrackPlan planLowBlow (const HelperInfo& h, const LowClash& clash, const 
     else if (G == "punk")     { depth = 5.0f; release = 60.0f; hold = 10.0f; }
     else if (G == "hardrock") { depth = 5.0f; release = 70.0f; }
     else if (G == "rock")     { depth = 4.0f; release = 90.0f; }
-    else if (G == "pop")      { depth = 6.0f; release = 120.0f; hold = 20.0f; }
     juce::String depthWhy = juce::String (depth, 0) + " dB is typical for " + g.name;
     if (clash.measured)
     {

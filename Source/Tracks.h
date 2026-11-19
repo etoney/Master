@@ -301,7 +301,6 @@ inline TracksResult planTracks (const Features& mix, const GenreProfile& g, std:
     //    cymbals and pick noise are supposed to be bright.
     {
         const float biteZ = g.z (fBand0 + 7, mix.band[7]);
-        const bool pop = G.equalsIgnoreCase ("pop");
         for (size_t i = 0; i < n; ++i)
         {
             const auto& t = tracks[i];
@@ -310,7 +309,7 @@ inline TracksResult planTracks (const Features& mix, const GenreProfile& g, std:
             if (spike < 10.0f || t.sibP95 < -9.0f || t.sibPerMin < 4.0f) continue;
             auto& p = plans[i];
             p.deessOn = true;
-            p.deess = std::round (juce::jlimit (20.0f, 80.0f, 30.0f + 3.0f * (t.sibP95 + 9.0f) + 10.0f * juce::jmax (0.0f, biteZ) + (pop ? 10.0f : 0.0f)));
+            p.deess = std::round (juce::jlimit (20.0f, 80.0f, 30.0f + 3.0f * (t.sibP95 + 9.0f) + 10.0f * juce::jmax (0.0f, biteZ)));
             p.why.add ("DE-ESS " + juce::String (juce::roundToInt (p.deess)) + "%: this track's \"s\" sounds jump " + juce::String (spike, 0) + " dB above the rest of it, about "
                        + juce::String (juce::roundToInt (t.sibPerMin)) + " times a minute" + (biteZ > 1.0f ? juce::String (", and the mix's bite (4-8 kHz) is already hot for ") + G : juce::String())
                        + ". Only the top end above " + juce::String (t.sibHz / 1000.0f, 1) + " kHz is turned down, only during an \"s\".");
@@ -323,7 +322,7 @@ inline TracksResult planTracks (const Features& mix, const GenreProfile& g, std:
     {
         const auto gk = (g.id.isNotEmpty() ? g.id : g.name).toLowerCase().removeCharacters (" _-");
         float boost = 15.0f;
-        if (gk == "metal") boost = 30.0f; else if (gk == "hardrock") boost = 25.0f; else if (gk == "punk") boost = 20.0f; else if (gk == "pop") boost = 10.0f;
+        if (gk == "metal") boost = 30.0f; else if (gk == "hardrock") boost = 25.0f; else if (gk == "punk") boost = 20.0f;
         const float zPlr = g.z (fPlr, mix.plr);
         const float lowZ = (g.z (fBand0 + 0, mix.band[0]) + g.z (fBand0 + 1, mix.band[1]) + g.z (fBand0 + 2, mix.band[2])) / 3.0f;
         const float lowMidZ = g.z (fBand0 + 3, mix.band[3]);

@@ -378,8 +378,6 @@ void MasterProcessor::getStateInformation (juce::MemoryBlock& destData)
     else state.removeProperty ("analysis", nullptr);
     if (plan.valid) state.setProperty ("autoFix", juce::JSON::toString (plan.toVar(), true), nullptr);
     else state.removeProperty ("autoFix", nullptr);
-    state.setProperty ("pluginMode", pluginMode, nullptr);
-    state.setProperty ("uiVersion", 2, nullptr);
     if (library.isCustom (genreChoice) && library.indexOf (genreChoice) >= 0)   // your own profile travels with the project
         state.setProperty ("customProfile", juce::JSON::toString (library.genres()[(size_t) library.indexOf (genreChoice)].toVar(), true), nullptr);
     else state.removeProperty ("customProfile", nullptr);
@@ -406,8 +404,6 @@ void MasterProcessor::setStateInformation (const void* data, int sizeInBytes)
             savedFeatures = a.isNotEmpty() ? mst::Features::fromVar (juce::JSON::parse (a)) : mst::Features {};
             const auto af = state.getProperty ("autoFix", "").toString();
             plan = af.isNotEmpty() ? mst::FixPlan::fromVar (juce::JSON::parse (af)) : mst::FixPlan {};
-            // from 1.5 MY PLUGINS comes first; older projects keep BUILT-IN FIXES only if they really used AUTO FIX
-            pluginMode = (int) state.getProperty ("uiVersion", 1) >= 2 ? (bool) state.getProperty ("pluginMode", true) : ! plan.valid || (bool) state.getProperty ("pluginMode", false);
             chainStage = state.getProperty ("chainStage", 0);
             const auto cp = state.getProperty ("chainPlan", "").toString();
             chainPlan = cp.isNotEmpty() ? mst::ChainPlan::fromVar (juce::JSON::parse (cp)) : mst::ChainPlan {};
@@ -420,10 +416,7 @@ void MasterProcessor::setStateInformation (const void* data, int sizeInBytes)
             state.removeProperty ("analysis", nullptr);
             state.removeProperty ("autoFix", nullptr);
             state.removeProperty ("chainPlan", nullptr);
-            state.removeProperty ("uiVersion", nullptr);
-            const bool hadHeadroom = state.getChildWithProperty ("id", "headroom").isValid();
             apvts.replaceState (state);
-            if (! hadHeadroom) setParam ("headroom", 1.0f);   // projects from before 1.7 were made for a finished -1 dB master
         }
 }
 

@@ -69,7 +69,6 @@ REFERENCE GENRE
             compares against that. The yellow lamp marks the match.
   ROCK / HARD ROCK / PUNK / METAL
             Lock the comparison to one genre (it's saved with the project).
-            A project saved aimed at Pop (removed in 1.11) goes back to AUTO.
 
   SOUNDS LIKE shows the closest genre and how sure the guess is (the % is
   split across all the genres, so it is NOT a score), plus the runner-up.
@@ -150,7 +149,7 @@ THE FIX  (The Master sets your plugins for you)
            Spotify, Apple Music and YouTube.
     Flip it any time. After PRESCRIBE or APPLY The Master re-plans the
     loudness part from the same analysis (no need to play the song again)
-    and sends the new settings. Projects made before 1.7 open on -1 dB.
+    and sends the new settings.
 
   1. Set up: The Servant on every track (ROLE set), The Master last on
      the master bus and nothing else there. RESET, then play the whole song.

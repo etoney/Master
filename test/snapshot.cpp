@@ -604,7 +604,7 @@ int main (int argc, char** argv)
     // ---------------- The Freak: which ranges jump around, and the bands it gets
     {
         auto byId = [&] (const char* id) -> const mst::GenreProfile& { for (auto& g : factory.genres) if (g.id == id) return g; return factory.genres[0]; };
-        const auto& pop = byId ("rock");   // (no Pop profile any more: Castle Danger doesn't do pop)
+        const auto& rockG = byId ("rock");
         auto pinkMix = [] (bool bursts)
         {
             auto pk = std::make_shared<std::array<Pink, 2>>();
@@ -622,14 +622,14 @@ int main (int argc, char** argv)
         float maxSteady = 0; for (auto v : steady.swing) maxSteady = std::max (maxSteady, v);
         check (steady.valid && maxSteady > 0.0f && maxSteady < 3.0f, "steady pink noise: no range jumps around (max swing " + juce::String (maxSteady, 1) + " dB)");
         check (harsh.swing[6] > 8.0f && harsh.swing[3] < 3.0f, "2.9 kHz spikes: PRESENCE swings " + juce::String (harsh.swing[6], 1) + " dB, LOW MID " + juce::String (harsh.swing[3], 1));
-        auto f0 = mst::planFreak (steady, pop);
-        auto f1 = mst::planFreak (harsh, pop);
+        auto f0 = mst::planFreak (steady, rockG);
+        auto f1 = mst::planFreak (harsh, rockG);
         check (f0.bands.empty() && f0.params.at ("b1on") == 0.0f, "The Freak: nothing to do on a steady mix");
         check (f1.bands.size() == 1 && f1.bands[0].range == 6 && f1.params.at ("b1on") == 1.0f && std::abs (f1.params.at ("b1f") - 2900.0f) < 1.0f
                && f1.params.at ("b1d") <= -2.0f && f1.params.at ("b1d") >= -6.0f && f1.params.at ("b2on") == 0.0f && f1.notes[0].contains ("PRESENCE"),
                "The Freak: one band on PRESENCE (2.9 kHz, depth " + juce::String (f1.params.count ("b1d") ? f1.params.at ("b1d") : 0.0f, 0) + " dB, threshold "
                + juce::String (f1.params.count ("b1t") ? f1.params.at ("b1t") : 0.0f, 1) + " dB) with a reason");
-        auto c0 = mst::planChain (steady, pop), c1 = mst::planChain (harsh, pop);
+        auto c0 = mst::planChain (steady, rockG), c1 = mst::planChain (harsh, rockG);
         check (c0.step ("freak") == nullptr && c1.step ("freak") != nullptr && c1.steps[0].kind == "freak" && c1.steps.back().kind == "dominatrix",
                "prescription: The Freak first (only when needed), Dominatrix last before The Master");
         bool why = false; for (auto& c : c1.changes) if (c.plugin == "freak" && c.why.contains ("PRESENCE") && c.why.contains ("Threshold")) why = true;
@@ -637,14 +637,14 @@ int main (int argc, char** argv)
         const auto rt = mst::ChainPlan::fromVar (c1.toVar());
         check (rt.step ("freak") != nullptr && rt.step ("freak")->notes.size() == 6 && rt.step ("freak")->notes[0] == c1.step ("freak")->notes[0], "Freak step + notes survive save/load");
         {
-            const auto lo = mst::planChain (harsh, pop, false), hi = mst::planChain (harsh, pop, true);
+            const auto lo = mst::planChain (harsh, rockG, false), hi = mst::planChain (harsh, rockG, true);
             const auto* dl = lo.step ("dominatrix"); const auto* dh = hi.step ("dominatrix");
             check (dl->params.at ("ceiling") == 0.0f && dh->params.at ("ceiling") == 1.0f && dh->params.at ("outputDb") < dl->params.at ("outputDb")
                    && hi.masterFix.ceilingDb == -6.0f && hi.headroom,
                    juce::String::formatted ("OUTPUT -6 dB plan: Dominatrix CEILING -6, OUTPUT %.1f (peaks to -6.3) instead of %.1f; safety limiter -6", dh->params.at ("outputDb"), dl->params.at ("outputDb")));
-            const auto quietMix = mst::advise (harsh, pop, true);
+            const auto quietMix = mst::advise (harsh, rockG, true);
             bool loudFix = false; for (auto& it : quietMix.items) if (it.title.contains ("QUIETER")) loudFix = true;
-            check (! loudFix && mst::advise (harsh, pop, true).score >= mst::advise (harsh, pop, false).score, "OUTPUT -6 dB: the report doesn't mark a mix down for being quieter than a finished record");
+            check (! loudFix && mst::advise (harsh, rockG, true).score >= mst::advise (harsh, rockG, false).score, "OUTPUT -6 dB: the report doesn't mark a mix down for being quieter than a finished record");
         }
         const auto fv = mst::Features::fromVar (harsh.toVar());
         check (std::abs (fv.swing[6] - harsh.swing[6]) < 0.01f, "swing measurements survive save/load");
@@ -689,27 +689,27 @@ int main (int argc, char** argv)
     {
         auto byId = [&] (const char* id) -> const mst::GenreProfile& { for (auto& g : factory.genres) if (g.id == id) return g; return factory.genres[0]; };
         const auto& metal = byId ("metal");
-        const auto& pop = byId ("rock");
-        check (metal.id == "metal" && pop.id == "rock", "factory has metal and rock");
+        const auto& rockG = byId ("rock");
+        check (metal.id == "metal" && rockG.id == "rock", "factory has metal and rock");
         mst::Features mix = meansOf (metal); mix.humHz = 60; mix.humSeconds = 4.0f;
         auto ex = [] (std::initializer_list<std::pair<const char*, juce::var>> kv) { auto* o = new juce::DynamicObject(); for (auto& [k, v] : kv) o->setProperty (k, v); return juce::var (o); };
         mst::HelperInfo bk { "b1", "buzzkill", "Rhythm Gtr", "Rhythm", ex ({ { "floorDb", -62.0 }, { "playDb", -20.0 }, { "seconds", 30.0 }, { "learned", true } }) };
         auto bm = mst::planBuzzKill (bk, mix, metal);
         auto bmLead = mst::planBuzzKill ({ "b2", "buzzkill", "Lead Gtr", "Lead", bk.extra }, mix, metal);
-        auto bp = mst::planBuzzKill (bk, mix, pop);
+        auto bp = mst::planBuzzKill (bk, mix, rockG);
         check (bm.params.at ("release") >= 0.75f && bp.params.at ("release") <= 0.5f && bmLead.params.at ("release") < bm.params.at ("release"),
                juce::String::formatted ("BuzzKill RELEASE: tight for metal rhythm (%.2f), gentler on a metal lead (%.2f), looser for rock (%.2f)",
                                         bm.params.at ("release"), bmLead.params.at ("release"), bp.params.at ("release")));
         check (bm.params.at ("listen") == 0.0f && bm.why.joinIntoString (" ").contains ("60 Hz hum"), "BuzzKill: HEAR REMOVED off, and the mix's hum is the reason");
         auto noisy = bk; noisy.extra = ex ({ { "floorDb", -45.0 }, { "playDb", -20.0 }, { "seconds", 30.0 }, { "learned", true } });
-        check (mst::planBuzzKill (noisy, mix, pop).params.at ("release") > bp.params.at ("release"), "BuzzKill closes sooner on a noisy track");
+        check (mst::planBuzzKill (noisy, mix, rockG).params.at ("release") > bp.params.at ("release"), "BuzzKill closes sooner on a noisy track");
         auto quietGtr = bk; quietGtr.extra = ex ({ { "floorDb", -90.0 }, { "playDb", -120.0 }, { "seconds", 0.0 }, { "learned", false } });
-        const auto qp = mst::planBuzzKill (quietGtr, mix, pop);
+        const auto qp = mst::planBuzzKill (quietGtr, mix, rockG);
         check (qp.note.contains ("CLEAN") && ! qp.note.contains ("NOT LEARNED") && qp.why.joinIntoString (" ").contains ("another track"),
                "BuzzKill on a near-silent guitar: CLEAN, nothing to remove (not NOT LEARNED), and the hum is from another track");
 
         mst::HelperInfo fl { "f1", "flatliner", "Lead Vox", "Lead", ex ({ { "p10", -34.0 }, { "p50", -22.0 }, { "p90", -14.0 }, { "floorDb", -70.0 }, { "seconds", 60.0 } }) };
-        auto fp = mst::planFlatliner (fl, pop);
+        auto fp = mst::planFlatliner (fl, rockG);
         auto fm = mst::planFlatliner (fl, byId ("punk"));
         check (std::abs (fp.params.at ("target") + 22.0f) < 0.01f && fp.params.at ("range") >= 10.0f && fm.params.at ("range") < fp.params.at ("range"),
                juce::String::formatted ("Flatliner: TARGET at the lead's average (%.1f), RANGE from its 20 dB swing (rock %.0f, punk %.0f)",
@@ -717,9 +717,9 @@ int main (int argc, char** argv)
         check (fp.params.at ("gate") < -34.0f + 0.01f && fp.params.at ("gate") > -70.0f && fp.params.at ("ride") == 1.0f,
                juce::String::formatted ("Flatliner GATE between the gaps and the quietest words (%.0f dB)", fp.params.at ("gate")));
         auto steady = fl; steady.extra = ex ({ { "p10", -24.0 }, { "p50", -21.0 }, { "p90", -19.0 }, { "floorDb", -70.0 }, { "seconds", 60.0 } });
-        check (mst::planFlatliner (steady, pop).params.at ("range") == 3.0f, "Flatliner: a steady lead gets only a gentle ride");
+        check (mst::planFlatliner (steady, rockG).params.at ("range") == 3.0f, "Flatliner: a steady lead gets only a gentle ride");
         auto fresh = fl; fresh.extra = ex ({ { "seconds", 1.0 } });
-        check (mst::planFlatliner (fresh, pop).params.empty(), "Flatliner: nothing is set until it has heard the song");
+        check (mst::planFlatliner (fresh, rockG).params.empty(), "Flatliner: nothing is set until it has heard the song");
         // CHOP SHOP on a drum track, DOMINATRIX on a thin bass
         {
             mst::TrackInfo snare; snare.name = "Snare"; snare.role = "Snare"; snare.transP95 = 10.0f; snare.transSeconds = 30.0f;
