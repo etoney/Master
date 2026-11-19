@@ -734,6 +734,23 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
     }
     for (auto s : common) mixSeries.push_back (myHist.at (s));
     for (auto& t : tracks) for (auto s : common) t.series.push_back (peerHist.at (t.id).at (s));
+    // a Servant on a bus: not a track of its own (it would count its tracks twice)
+    juce::StringArray busNames, busNotes;
+    {
+        const auto buses = mst::findBuses (tracks);
+        for (auto& b : buses)
+        {
+            const auto& bt = tracks[b.index];
+            busNames.add (bt.name);
+            juce::String list;
+            for (int k = 0; k < juce::jmin (3, b.carries.size()); ++k) list << (k > 0 ? ", " : "") << b.carries[k];
+            if (b.carries.size() > 3) list << " and " << (b.carries.size() - 3) << " more";
+            busNotes.add ("BUS: " + bt.name + " is a bus (it carries " + list + "). Take The Servant off it: those tracks have their own Servants, "
+                          "so it would count them twice. A bus only gets Flatliner (on a vocal bus) from the Mix System.");
+        }
+        for (int k = (int) tracks.size(); --k >= 0;)
+            if (busNames.contains (tracks[(size_t) k].name)) tracks.erase (tracks.begin() + k);
+    }
     // BuzzKill and Flatliner on the tracks: which track each one is on (its Servant), what it heard
     std::vector<mst::HelperInfo> helpers;
     std::set<juce::String> ridden;
@@ -743,6 +760,13 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
         mst::HelperInfo h;
         h.id = id; h.kind = p.kind; h.extra = p.extra;
         h.track = p.extra.getProperty ("track", "").toString();
+        if (p.kind != "flatliner" && h.track.isNotEmpty() && busNames.contains (h.track))
+        {
+            busNotes.add (juce::String (mst::plugDisplayName (p.kind)) + " is on " + h.track + ", a bus. Take it off: "
+                          + (p.kind == "lowblow" ? "Low Blow goes on the bass track only, with the kick on its sidechain."
+                                                 : "it goes on the track itself, after that track's Servant."));
+            continue;
+        }
         const auto sv = servantOnSameTrack (p);
         if (sv.isNotEmpty())
         {
@@ -907,6 +931,7 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
             chainPlan.onTracks.insert (0, "FLATLINER on " + where + ": " + why);
         }
     }
+    for (int k = busNotes.size(); --k >= 0;) chainPlan.onTracks.insert (0, busNotes[k]);
     chainStage = 1;
     chainLog.clear();
     ++linkVersion;

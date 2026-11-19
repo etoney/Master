@@ -98,6 +98,60 @@ inline std::vector<double> fitGains (const std::vector<float>& mix, const std::v
     return g;
 }
 
+// A Servant on a bus (a drum bus, a vocal bus) hears tracks that have their own Servants. Planning
+// it as a track would count them twice, and its ROLE ("Drums") would stand in for the kick. It shows
+// up in the fingerprints: its level over time is the sum of a few other tracks, and so is its tone.
+struct BusFound { size_t index; juce::StringArray carries; };
+
+inline std::vector<BusFound> findBuses (const std::vector<TrackInfo>& tracks)
+{
+    std::vector<BusFound> out;
+    const size_t n = tracks.size();
+    if (n < 3) return out;
+    const size_t T = tracks[0].series.size();
+    if (T < 30) return out;
+    for (auto& t : tracks) if (t.series.size() != T) return out;
+    for (size_t c = 0; c < n; ++c)
+    {
+        std::vector<std::vector<float>> others;
+        std::vector<size_t> idx;
+        for (size_t j = 0; j < n; ++j) if (j != c) { others.push_back (tracks[j].series); idx.push_back (j); }
+        const auto& y = tracks[c].series;
+        double yy = 0; for (auto v : y) yy += (double) v * v;
+        if (yy <= 0) continue;
+        const auto g = fitGains (y, others);
+        double res = 0;
+        std::vector<double> part (others.size(), 0.0);
+        for (size_t k = 0; k < T; ++k)
+        {
+            double f = 0;
+            for (size_t j = 0; j < others.size(); ++j) { const double v = g[j] * others[j][k]; f += v; part[j] += v; }
+            res += (y[k] - f) * (y[k] - f);
+        }
+        if (res / yy > 0.03) continue;
+        double fitTot = 0; for (auto v : part) fitTot += v;
+        juce::StringArray carries;
+        std::array<double, kNumBands> pred {};
+        for (size_t j = 0; j < others.size(); ++j)
+        {
+            if (fitTot > 0 && part[j] / fitTot >= 0.03) carries.add (tracks[idx[j]].name);
+            for (int b = 0; b < kNumBands; ++b) pred[(size_t) b] += g[j] * tracks[idx[j]].bandPow[(size_t) b];
+        }
+        if (carries.size() < 2) continue;
+        // the tone has to add up too (an overhead mic hears the kit, but not with the close mics' tone)
+        double mx = 0; for (auto v : tracks[c].bandPow) mx = std::max (mx, v);
+        bool toneOk = mx > 0;
+        for (int b = 0; b < kNumBands && toneOk; ++b)
+        {
+            const double a = tracks[c].bandPow[(size_t) b];
+            if (a < mx * 1e-3) continue;
+            toneOk = std::abs (10.0 * std::log10 (std::max (1e-20, pred[(size_t) b]) / a)) <= 2.0;
+        }
+        if (toneOk) out.push_back ({ c, carries });
+    }
+    return out;
+}
+
 struct TracksResult
 {
     std::vector<TrackPlan> tracks;

@@ -525,6 +525,21 @@ int main (int argc, char** argv)
             for (auto& t : stack) if (t.role.startsWith ("Backing")) { auto& sr = t.series; for (size_t k = 0; k < sr.size(); ++k) if ((k / 50) % 2 == 1) sr[k] *= 0.02f; }
             const auto [fw, fwhy] = mst::flatlinerAdvice (stack);
             check (fw == "a vocal bus" && fwhy.contains ("17 tracks"), "Flatliner: vocals spread over many tracks that swing get Flatliner on a vocal bus (" + fw + ")");
+            {   // a Servant on a drum bus is found from its fingerprint and isn't planned as a track
+                auto withBus = tr;
+                mst::TrackInfo bus; bus.id = "bus"; bus.name = "Drums"; bus.role = "Drums"; bus.seconds = 40;
+                auto kick = tr[3]; kick.id = "k"; kick.name = "01_Kick"; kick.role = "Kick";
+                for (size_t k = 0; k < kick.series.size(); ++k) kick.series[k] = (k % 7 == 0 ? 3.0f : 0.05f);
+                withBus.push_back (kick);
+                bus.series.resize (tr[3].series.size());
+                for (size_t k = 0; k < bus.series.size(); ++k) bus.series[k] = 0.8f * tr[3].series[k] + 1.2f * kick.series[k];
+                for (int b = 0; b < 10; ++b) bus.bandPow[(size_t) b] = 0.8 * tr[3].bandPow[(size_t) b] + 1.2 * kick.bandPow[(size_t) b];
+                withBus.push_back (bus);
+                const auto found = mst::findBuses (withBus);
+                check (found.size() == 1 && withBus[found[0].index].name == "Drums" && found[0].carries.contains ("Snare") && found[0].carries.contains ("01_Kick"),
+                       juce::String::formatted ("a Servant on the drum bus is found as a bus (%d found)", (int) found.size()));
+                check (mst::findBuses (tr).empty(), "ordinary tracks aren't taken for buses");
+            }
             auto jumpy = tr; for (size_t k = 0; k < jumpy[2].series.size(); ++k) if ((k / 40) % 2 == 1) jumpy[2].series[k] *= 0.05f;
             const auto [lw, lwhy] = mst::flatlinerAdvice (jumpy);
             check (lw == "Lead Vox", "Flatliner: a single lead that swings gets it on its own track (" + lw + ")");
