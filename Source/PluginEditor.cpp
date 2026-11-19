@@ -685,6 +685,7 @@ void ChainView::paint (juce::Graphics& g)
         else if (! s->linked) { col = pal::signalHot; txt = "NOT FOUND: ADD IT"; }
         else if (s->position < 0) { col = pal::hazard; txt = orderKnown ? "LINKED, NOT IN CHAIN?" : "LINKED: PLAY TO CHECK"; }
         else if (! s->orderOk) { col = pal::signalHot; txt = "LINKED: WRONG SPOT"; }
+        else if (s->rebel) { col = pal::signal; txt = "REBEL: HANDS OFF"; }
         else { col = juce::Colour (0xff9aa86a); txt = stage >= 2 ? "LINKED: SET" : "LINKED: IN ORDER"; }
         auto head = row.removeFromTop (row.getHeight() * 0.55f);
         auto stat = head.removeFromRight (150);
@@ -2024,7 +2025,7 @@ juce::String MasterEditor::diagnosticsText() const
 
     s << line ("MASTER BUS STATUS");
     for (auto& st : proc.chainStatus())
-        s << "  " << st.name << ": " << (st.linked ? "linked" : "NOT FOUND") << ", position " << st.position << (st.orderOk ? ", order ok" : ", ORDER WRONG") << "\n";
+        s << "  " << st.name << ": " << (st.linked ? "linked" : "NOT FOUND") << ", position " << st.position << (st.orderOk ? ", order ok" : ", ORDER WRONG") << (st.rebel ? ", REBEL (hands off)" : "") << "\n";
     s << "  order known: " << (proc.chainOrderKnown() ? "yes" : "no (play a few seconds)") << "\n";
 
     s << line ("YOUR TRACKS");

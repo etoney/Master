@@ -114,6 +114,7 @@ public:
         bool linked = false;         // a plugin of this kind is in the session
         int position = -1;           // where it actually sits in The Master's chain (0 = first), -1 = not detected
         bool orderOk = false;        // detected and in the prescribed order
+        bool rebel = false;          // REBEL on: The Master leaves it as you set it
     };
     struct LogEntry { juce::String plugin, title, detail; bool confirmed = false; juce::String peerId; };
     struct TrackStatus { juce::String peerId, kind { "servant" }, name, role, summary; float share = -1; bool linked = false, planned = false; };
@@ -122,6 +123,9 @@ public:
     // a plugin sitting on a track: the track-only kinds, plus a Chop Shop or Dominatrix whose DAW track
     // name matches a Servant's track (on a drum track / the bass), as opposed to the master bus
     bool isTrackPeer (const juce::String& id) const;
+    bool isRebel (const juce::String& id) const;   // REBEL on: The Master hands off
+    void updateTrackProperties (const TrackProperties& props) override { const juce::ScopedLock sl (nameLock); myTrackName = props.name.value_or (juce::String()); }
+    juce::String getMyTrackName() const { const juce::ScopedLock sl (nameLock); return myTrackName; }
 
     bool isPluginMode() const { return pluginMode; }
     void setPluginMode (bool b) { pluginMode = b; }
@@ -189,6 +193,9 @@ private:
     // and every linked plugin's output, to work out each track's real gain into the mix
     std::map<juce::int64, float> myHist;
     std::map<juce::String, std::map<juce::int64, float>> peerHist;
+    juce::CriticalSection nameLock;
+    juce::String myTrackName;         // the channel The Master sits on (the master bus); other channels are tracks
+    juce::StringArray autoRebelled;   // "kind|track" of plugins The Master switched to REBEL itself (once each)
     static void mergeEnv (std::map<juce::int64, float>& hist, const juce::var& env, const char* key, bool keepSilence = false);
     cdlink::EnvTap env;
     std::unique_ptr<cdlink::Endpoint> link;

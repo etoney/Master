@@ -554,6 +554,13 @@ int main (int argc, char** argv)
                        juce::String::formatted ("a Servant on the drum bus is found as a bus (%d found)", (int) found.size()));
                 check (mst::findBuses (tr).empty(), "ordinary tracks aren't taken for buses");
             }
+            {   // REBEL on a Servant: measured and balanced around, never changed
+                auto rb = tr; rb[0].rebel = true;
+                const auto rr = mst::planTracks (mix, rock, rb, mixS);
+                bool none = rr.tracks[0].rebel && rr.tracks[0].params.empty() && rr.tracks[0].summary() == "REBEL: HANDS OFF";
+                for (auto v : rr.tracks[0].eq) none = none && v == 0.0f;
+                check (none && rr.tracks[0].trimDb == 0.0f && ! rr.tracks[0].compOn, "REBEL on a Servant: The Master plans nothing for that track");
+            }
             auto jumpy = tr; for (size_t k = 0; k < jumpy[2].series.size(); ++k) if ((k / 40) % 2 == 1) jumpy[2].series[k] *= 0.05f;
             const auto la = mst::flatlinerAdvice (jumpy);
             const juce::String lw = la.empty() ? juce::String() : la[0].where;
@@ -1230,8 +1237,25 @@ int main (int argc, char** argv)
             for (int i = 0; i < 80 && chop2.sets == 0; ++i) pump (50);
             const mst::TrackPlan* tc = nullptr;
             for (auto& t : p.getChainPlan().tracks) if (t.kind == "chopshop") tc = &t;
-            check (tc != nullptr && tc->name == "Rhythm Gtr" && chop2.sets == 1 && std::abs (chop2.params["ceilingDb"] - tc->params.at ("ceilingDb")) < 0.01,
-                   juce::String::formatted ("UPDATE plans the track Chop Shop and sends it its ceiling (%.1f dB)", chop2.params["ceilingDb"]));
+            bool rebelNote = false; for (auto& o : p.getChainPlan().onTracks) if (o.startsWith ("REBEL") && o.contains ("Rhythm Gtr")) rebelNote = true;
+            // nobody asked for a Chop Shop on the guitar: it's yours, so REBEL goes on and nothing else is sent
+            check (tc != nullptr && tc->rebel && chop2.params["rebel"] > 0.5 && chop2.params["ceilingDb"] == 0.0 && rebelNote,
+                   "a Chop Shop The Master didn't ask for: it switches its REBEL on, says so, and leaves its settings alone");
+            pump (600);
+            const int setsRebel = chop2.sets;
+            pme->refreshNow(); pme->pressAutoFix();
+            for (int i = 0; i < 20; ++i) pump (50);
+            check (chop2.sets == setsRebel && chop2.params["ceilingDb"] == 0.0, "while REBEL is on, UPDATE sends it nothing");
+            // you turn REBEL off: from now on The Master runs it (and doesn't switch REBEL back on)
+            chop2.params["rebel"] = 0.0;
+            pump (600);
+            pme->refreshNow(); pme->pressAutoFix();
+            for (int i = 0; i < 80 && chop2.params["ceilingDb"] == 0.0; ++i) pump (50);
+            tc = nullptr;
+            for (auto& t : p.getChainPlan().tracks) if (t.kind == "chopshop") tc = &t;
+            check (tc != nullptr && ! tc->rebel && tc->name == "Rhythm Gtr" && chop2.params["rebel"] < 0.5 && tc->params.count ("ceilingDb")
+                   && std::abs (chop2.params["ceilingDb"] - tc->params.at ("ceilingDb")) < 0.01,
+                   juce::String::formatted ("REBEL off: UPDATE plans the track Chop Shop and sends it its ceiling (%.1f dB), and leaves REBEL off", chop2.params["ceilingDb"]));
         }
 
         {

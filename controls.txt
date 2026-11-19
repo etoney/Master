@@ -319,3 +319,8 @@ GENRE PROFILES
   castledangermusic.com. To install one: PROFILES > Import profile pack...
   and pick the .json file. Every copy of The Master on your computer uses
   it. PROFILES > Restore factory profiles undoes it.
+
+REBEL (on every other Mix System plugin)
+  A plugin with REBEL on is left exactly as you set it: The Master sends it nothing, still hears what it
+  does, and plans the rest around it. A Chop Shop or Dominatrix you put on a track without being asked
+  gets REBEL switched on by The Master, once; turn it off to hand that plugin over.

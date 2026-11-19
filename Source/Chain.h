@@ -95,7 +95,7 @@ struct ChainPlan
         for (auto& t : tracks)
         {
             auto* to = new juce::DynamicObject();
-            to->setProperty ("kind", t.kind); to->setProperty ("note", t.note);
+            to->setProperty ("kind", t.kind); to->setProperty ("note", t.note); to->setProperty ("rebel", t.rebel);
             to->setProperty ("id", t.id); to->setProperty ("name", t.name); to->setProperty ("role", t.role);
             to->setProperty ("share", (double) t.share); to->setProperty ("trim", (double) t.trimDb);
             to->setProperty ("comp", (double) t.comp); to->setProperty ("compOn", t.compOn);
@@ -157,7 +157,7 @@ struct ChainPlan
             for (auto& tv : *tr)
             {
                 TrackPlan t;
-                t.kind = tv.getProperty ("kind", "servant").toString(); t.note = tv.getProperty ("note", "").toString();
+                t.kind = tv.getProperty ("kind", "servant").toString(); t.note = tv.getProperty ("note", "").toString(); t.rebel = (bool) tv.getProperty ("rebel", false);
                 t.id = tv.getProperty ("id", "").toString(); t.name = tv.getProperty ("name", "").toString(); t.role = tv.getProperty ("role", "").toString();
                 t.share = (float) (double) tv.getProperty ("share", 0.0); t.trimDb = (float) (double) tv.getProperty ("trim", 0.0);
                 t.comp = (float) (double) tv.getProperty ("comp", 0.0); t.compOn = tv.getProperty ("compOn", false);

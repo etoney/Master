@@ -382,6 +382,7 @@ void MasterProcessor::getStateInformation (juce::MemoryBlock& destData)
         state.setProperty ("customProfile", juce::JSON::toString (library.genres()[(size_t) library.indexOf (genreChoice)].toVar(), true), nullptr);
     else state.removeProperty ("customProfile", nullptr);
     state.setProperty ("chainStage", chainStage, nullptr);
+    state.setProperty ("autoRebel", autoRebelled.joinIntoString ("\n"), nullptr);
     if (chainPlan.valid) state.setProperty ("chainPlan", juce::JSON::toString (chainPlan.toVar(), true), nullptr);
     else state.removeProperty ("chainPlan", nullptr);
     if (auto xml = state.createXml()) copyXmlToBinary (*xml, destData);
@@ -405,6 +406,8 @@ void MasterProcessor::setStateInformation (const void* data, int sizeInBytes)
             const auto af = state.getProperty ("autoFix", "").toString();
             plan = af.isNotEmpty() ? mst::FixPlan::fromVar (juce::JSON::parse (af)) : mst::FixPlan {};
             chainStage = state.getProperty ("chainStage", 0);
+            autoRebelled = juce::StringArray::fromLines (state.getProperty ("autoRebel", "").toString());
+            autoRebelled.removeEmptyStrings();
             const auto cp = state.getProperty ("chainPlan", "").toString();
             chainPlan = cp.isNotEmpty() ? mst::ChainPlan::fromVar (juce::JSON::parse (cp)) : mst::ChainPlan {};
             if (! chainPlan.valid) chainStage = 0;
@@ -587,6 +590,12 @@ bool MasterProcessor::chainOrderKnown() const
     return loud >= 12;
 }
 
+bool MasterProcessor::isRebel (const juce::String& id) const
+{
+    const auto it = peers.find (id);
+    return it != peers.end() && (double) it->second.params.getProperty ("rebel", 0.0) > 0.5;
+}
+
 bool MasterProcessor::isTrackPeer (const juce::String& id) const
 {
     const auto it = peers.find (id);
@@ -596,6 +605,8 @@ bool MasterProcessor::isTrackPeer (const juce::String& id) const
     if (p.kind != "chopshop" && p.kind != "dominatrix") return false;
     const auto track = p.extra.getProperty ("track", "").toString();
     if (track.isEmpty()) return false;
+    // on a channel other than The Master's own: a track (or a bus), never the master bus
+    if (const auto mine = getMyTrackName(); mine.isNotEmpty() && ! track.equalsIgnoreCase (mine)) return true;
     for (auto& [sid, sp] : peers)
         if (sp.kind == "servant" && sp.extra.getProperty ("track", "").toString().equalsIgnoreCase (track)) return true;
     return false;
@@ -622,6 +633,7 @@ std::vector<MasterProcessor::StepStatus> MasterProcessor::chainStatus() const
         s.kind = st.kind; s.name = st.name; s.role = st.role;
         s.peerId = resolvePeer (st.kind);
         s.linked = s.peerId.isNotEmpty();
+        s.rebel = s.linked && isRebel (s.peerId);
         for (int i = 0; i < (int) order.size(); ++i) if (order[(size_t) i] == s.peerId) s.position = i;
         s.orderOk = s.position >= 0 && s.position > lastPos;
         if (s.position >= 0) lastPos = s.position;
@@ -632,6 +644,8 @@ std::vector<MasterProcessor::StepStatus> MasterProcessor::chainStatus() const
 
 void MasterProcessor::sendSet (const juce::String& peerId, const std::map<juce::String, float>& params, const juce::String& note)
 {
+    // REBEL: nothing goes to a plugin you've taken back (only REBEL itself)
+    if (isRebel (peerId) && ! (params.size() == 1 && params.count ("rebel") == 1)) return;
     auto m = cdlink::Endpoint::makeMessage ("set");
     auto* o = new juce::DynamicObject();
     for (auto& [k, v] : params) o->setProperty (k, (double) v);
@@ -674,7 +688,7 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
         bool tainted = false;
         for (auto& [id, p] : peers)
         {
-            if (isTrackPeer (id)) continue;
+            if (isTrackPeer (id) || isRebel (id)) continue;   // a REBEL plugin stays as you set it; START OVER can't change it
             if (p.kind == "dominatrix" && std::abs ((double) p.params.getProperty ("outputDb", 0.0)) > 1.0) tainted = true;
             if (p.kind == "chopshop" && (double) p.extra.getProperty ("seconds", 0.0) >= 5.0 && (double) p.params.getProperty ("mix", 0.0) > 0.0
                 && (double) p.extra.getProperty ("songPeakDb", -100.0) > in.samplePeak + 2.0) tainted = true;
@@ -689,6 +703,7 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
     const auto target = resolveTarget (in);
     const auto& genres = library.genres();
     if (target.index < 0 || target.index >= (int) genres.size()) return "No genre profile to aim for.";
+    const auto askedBefore = chainPlan.adds;   // what the last prescription asked you to add
     chainPlan = mst::planChain (in, genres[(size_t) target.index], headroomMode());
 
     // The Servants on the tracks: tone, compression and balance shared out to the tracks that cause them
@@ -722,6 +737,7 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
             t.transSeconds = (float) (double) tr.getProperty ("seconds", 0.0);
         }
         if (t.seconds < 1.0) continue;   // silent track (or nothing measured yet)
+        t.rebel = isRebel (id);
         tracks.push_back (t);
     }
     // series on the slots everyone has
@@ -799,15 +815,51 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
     const auto& G = genres[(size_t) target.index];
     bool anyBuzz = false, anyFlat = false, anyLowBlow = false;
     const auto clash = mst::findLowClash (tracks);
+    juce::StringArray rebelNotes;
     for (auto& h : helpers)
     {
         auto trackInfo = [&] () -> const mst::TrackInfo* { for (auto& t : tracks) if (t.name.equalsIgnoreCase (h.track)) return &t; return nullptr; };
+        bool rebel = isRebel (h.id);
+        // a Chop Shop or Dominatrix on a track that The Master didn't ask for is yours: it switches
+        // REBEL on for it, once (turn REBEL off and The Master runs it from then on)
+        if (! rebel && (h.kind == "chopshop" || h.kind == "dominatrix"))
+        {
+            bool asked = false;
+            for (auto& a : askedBefore) if (a.kind == h.kind && a.track.equalsIgnoreCase (h.track)) asked = true;
+            if (h.kind == "chopshop")
+                for (auto& sv : chainPlan.tracks) if (sv.kind == "servant" && sv.name.equalsIgnoreCase (h.track) && mst::wantsDrumClip (sv)) asked = true;
+            if (h.kind == "dominatrix")
+                if (auto* t = trackInfo(); t != nullptr && mst::roleIs (t->role, { "Bass" }) && mst::bassHarmonicsDb (*t) < mst::kThinBassDb) asked = true;
+            const auto key = h.kind + "|" + h.track.toLowerCase();
+            if (! asked && ! autoRebelled.contains (key))
+            {
+                autoRebelled.add (key);
+                sendSet (h.id, { { "rebel", 1.0f } }, "The Master: REBEL on (you put this here yourself)");
+                if (auto it = peers.find (h.id); it != peers.end())
+                    if (auto* o = it->second.params.getDynamicObject()) o->setProperty ("rebel", 1.0);
+                rebel = true;
+                rebelNotes.add ("REBEL: " + juce::String (mst::plugDisplayName (h.kind)) + " on " + h.track + " wasn't asked for, so The Master switched its REBEL on and "
+                                "leaves it exactly as you set it. Turn REBEL off on it to let The Master run it.");
+            }
+        }
+        if (rebel)
+        {
+            mst::TrackPlan p;
+            p.kind = h.kind; p.id = h.id; p.name = h.track.isNotEmpty() ? h.track : juce::String ("(unnamed track)"); p.role = h.role;
+            p.rebel = true; p.note = "REBEL: HANDS OFF";
+            p.why.add ("REBEL is on: The Master leaves this " + juce::String (mst::plugDisplayName (h.kind)) + " exactly as you set it. It still hears what it does in the mix.");
+            chainPlan.tracks.push_back (p);
+            if (h.kind == "lowblow") anyLowBlow = true;
+            if (h.kind == "buzzkill") anyBuzz = true;
+            if (h.kind == "flatliner") anyFlat = true;
+            continue;
+        }
         if (h.kind == "chopshop")
         {
             chainPlan.tracks.push_back (mst::planTrackChop (h, trackInfo(), G));
             // the clipper takes the peaks: The Servant on the same track doesn't compress them as well
             for (auto& sv : chainPlan.tracks)
-                if (sv.kind == "servant" && sv.name.equalsIgnoreCase (h.track) && sv.compOn)
+                if (sv.kind == "servant" && ! sv.rebel && sv.name.equalsIgnoreCase (h.track) && sv.compOn)
                 {
                     sv.compOn = false; sv.comp = 0; sv.params["compOn"] = 0.0f;
                     for (int w = sv.why.size(); --w >= 0;) if (sv.why[w].startsWith ("COMP")) sv.why.remove (w);
@@ -936,6 +988,7 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
         }
     }
     for (int k = busNotes.size(); --k >= 0;) chainPlan.onTracks.insert (0, busNotes[k]);
+    for (auto& r : rebelNotes) chainPlan.onTracks.add (r);
     chainStage = 1;
     chainLog.clear();
     ++linkVersion;
@@ -953,10 +1006,12 @@ juce::String MasterProcessor::applyChain()
         return "Put " + missing.joinIntoString (" and ") + " on the master bus (before The Master) first. If more than one copy is open, play a few seconds so The Master can tell which one is on the bus.";
 
     chainLog.clear();
+    juce::StringArray rebelSteps;
     for (auto& s : st)
     {
         const auto* step = chainPlan.step (s.kind);
         const auto& peer = peers.at (s.peerId);
+        if (isRebel (s.peerId)) { rebelSteps.add (s.kind); continue; }   // REBEL: left as you set it
         sendSet (s.peerId, step->params, "The Master: " + chainPlan.genreName + " prescription");
         if (! step->notes.isEmpty())
         {
@@ -977,7 +1032,7 @@ juce::String MasterProcessor::applyChain()
     int tracksSet = 0;
     for (auto& t : chainPlan.tracks)
     {
-        if (peers.count (t.id) == 0 || t.params.empty()) continue;
+        if (peers.count (t.id) == 0 || t.params.empty() || t.rebel || isRebel (t.id)) continue;
         sendSet (t.id, t.params, "The Master: " + chainPlan.genreName + " mix balance");
         ++tracksSet;
     }
@@ -992,8 +1047,11 @@ juce::String MasterProcessor::applyChain()
     setParam ("match", 0.0f);
     setParam ("fixOn", 1.0f);
 
+    for (auto& k : rebelSteps)
+        chainLog.push_back ({ mst::plugDisplayName (k), "REBEL: HANDS OFF", "REBEL is on, so The Master left every setting as you set it and plans the rest around it.", true });
     for (auto& c : chainPlan.changes)
     {
+        if (rebelSteps.contains (c.plugin)) continue;
         juce::String title = c.label;
         if (c.plugin != "master")
         {
@@ -1147,6 +1205,7 @@ bool MasterProcessor::chainOutdated() const
     // one that hadn't heard the song when it was planned, and has now
     for (auto& t : chainPlan.tracks)
     {
+        if (t.rebel != isRebel (t.id)) return true;   // you switched REBEL on or off
         const auto& x = peers.at (t.id).extra;
         const bool heard = (double) x.getProperty ("seconds", 0.0) >= 5.0;
         if (t.note == "NOT ENOUGH HEARD YET" && heard) return true;
