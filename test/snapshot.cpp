@@ -1294,6 +1294,17 @@ int main (int argc, char** argv)
         check (p.getChainPlan().headroom && dom.sets > domSetsBefore && std::abs (dom.params["ceiling"] - 1.0) < 0.01
                && std::abs (p.currentFixParams().ceilingDb + 6.0f) < 0.01f && p.getChainPlan().tracks.size() == cp.tracks.size(),
                juce::String::formatted ("OUTPUT -6 dB after APPLY: Dominatrix CEILING -6 dB, OUTPUT %.1f dB, safety limiter -6 dBTP, tracks kept", dom.params["outputDb"]));
+        {   // the user guide's picture of the fix, with OUTPUT at -6 dB (the recommended setting)
+            trackPinger.startTimer (250);   // the track plugins keep reporting while the picture is taken
+            std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
+            auto* me = dynamic_cast<MasterEditor*> (ed.get());
+            me->showPage (1);
+            pump (800);
+            me->refreshNow();
+            pump (200);
+            check (writePng (ed->createComponentSnapshot (ed->getLocalBounds(), true, 2.0f), dir.getChildFile ("gui_plugins_applied_6db.png")), "MY PLUGINS: applied at OUTPUT -6 dB (user guide)");
+            trackPinger.stopTimer();
+        }
 
         // AUTO keeps judging against the prescription's genre, whatever the processed mix now sounds like
         {
@@ -1317,11 +1328,12 @@ int main (int argc, char** argv)
             dom.params["outputDb"] = 10.7; chop.params["ceilingDb"] = -17.0; chop.params["mix"] = 100.0;
             const int ds = dom.sets, cs = chop.sets, gs = gtr.sets;
             p.startOver();
-            for (int i = 0; i < 40 && (dom.sets == ds || chop.sets == cs || gtr.sets == gs); ++i) pump (50);
+            for (int i = 0; i < 60 && (dom.sets == ds || chop.sets == cs || gtr.sets == gs || gtr.params["toneOn"] != 0.0); ++i) pump (50);
             check (p.getChainStage() == 0 && ! p.getChainPlan().valid && ! p.isFixOn(), "START OVER clears the prescription and turns The Master's own fix off");
             check (std::abs (dom.params["outputDb"]) < 0.01 && std::abs (dom.params["ceiling"] - 2.0) < 0.01 && std::abs (dom.params["discipline"]) < 0.01
                    && std::abs (chop.params["mix"]) < 0.01 && std::abs (gtr.params["toneOn"]) < 0.01 && std::abs (gtr.params["compOn"]) < 0.01,
-                   "START OVER puts Dominatrix, Chop Shop and The Servants back to pass-through");
+                   juce::String::formatted ("START OVER puts Dominatrix, Chop Shop and The Servants back to pass-through (dom out %.1f ceil %.1f disc %.1f, chop mix %.1f, gtr tone %.1f comp %.1f)",
+                                            dom.params["outputDb"], dom.params["ceiling"], dom.params["discipline"], chop.params["mix"], gtr.params["toneOn"], gtr.params["compOn"]));
             // a fresh prescription through a Dominatrix still turned up refuses, and starts over by itself
             p.setNonRealtime (true);
             play (12.0, false);
