@@ -318,7 +318,7 @@ private:
     std::vector<std::unique_ptr<FixSection>> sections;
     FixInfo fixInfo;
     std::vector<juce::Component*> analyzeComps, fixComps, chainComps;
-    juce::TextButton builtInButton { "OR USE BUILT-IN FIXES" }, nextButton { "GO TO FIX  >" };
+    juce::TextButton builtInButton { "OR USE BUILT-IN FIXES" }, nextButton { "PRESCRIBE  >" };
     void showMyProfilesMenu();
     void promptNewSongProfile();
     std::unique_ptr<juce::AlertWindow> nameDialog;

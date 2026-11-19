@@ -27,7 +27,6 @@ struct TrackInfo
     // transients, measured by The Servant: how far its hits jump over its own body (95th percentile, dB)
     float transP95 = 0, transSeconds = 0;
     float lpf = 20000;                          // The Servant's own low-pass: nothing above it is worth boosting
-    bool rebel = false;                         // REBEL on its Servant: measured, balanced around, never changed
 };
 
 struct TrackPlan
@@ -213,7 +212,6 @@ inline TracksResult planTracks (const Features& mix, const GenreProfile& g, std:
         {
             const double s = c[i][(size_t) b] / tot[(size_t) b];
             if (s < 0.03) continue;                               // barely in this band: leave it alone
-            if (tracks[i].rebel) continue;                        // REBEL: the others take its share
             // never boost what the track's own clean-up filters out (an amp sim's fizz above its low-pass)
             if (! cut && std::sqrt (bandDefs()[(size_t) b].lo * bandDefs()[(size_t) b].hi) > tracks[i].lpf * 0.85f) continue;
             w[i] = s * roleFactor (plans[i].role, b, cut);
@@ -494,17 +492,6 @@ inline TracksResult planTracks (const Features& mix, const GenreProfile& g, std:
         }
         if (p.why.isEmpty()) p.why.add ("Already sits well in the mix. Nothing to change.");
     }
-    // REBEL: The Master keeps its hands off these. They still count in every measurement above.
-    for (size_t i = 0; i < n; ++i)
-        if (tracks[i].rebel)
-        {
-            auto& p = plans[i];
-            p.rebel = true;
-            p.eq = {}; p.trimDb = 0; p.compOn = false; p.comp = 0; p.deessOn = false; p.transOn = false; p.transAtk = p.transSus = 0;
-            p.params.clear();
-            p.why.clear();
-            p.why.add ("REBEL is on: The Master keeps its hands off this track. It still hears it and balances the rest of the mix around it.");
-        }
     res.tracks = std::move (plans);
     return res;
 }

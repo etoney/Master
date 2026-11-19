@@ -17,7 +17,7 @@ THE STEP BAR (under the genre bar) is the way through, five steps:
   audio passes through untouched), the other three show the fix.
   THE BIG BUTTON next to it always does the next thing:
     PLAY YOUR SONG  until The Master has heard 20 seconds (it tells you how)
-    GO TO FIX >     on the report: opens the fix and prescribes straight away
+    PRESCRIBE >     on the report: opens the prescription and prescribes straight away
     PRESCRIBE / APPLY / REFINE  on the fix page, and UPDATE when you've
                     added or removed plugins on your tracks
   The fix: The Master prescribes your Castle Danger plugins (which ones, in
@@ -154,7 +154,7 @@ THE FIX  (The Master sets your plugins for you)
   1. Set up: The Servant on every track (ROLE set), The Master last on
      the master bus and nothing else there. RESET, then play the whole song.
      The report's first line counts the Servants listening.
-  2. GO TO FIX (the big button) prescribes straight away; if it hadn't heard
+  2. PRESCRIBE (the big button) prescribes straight away; if it hadn't heard
      enough yet, keep playing and press PRESCRIBE. THE PRESCRIPTION lists
      the chain, in order, for example:
         1 THE FREAK   dynamic EQ: cuts the ranges that jump out, only when
@@ -200,7 +200,7 @@ THE FIX  (The Master sets your plugins for you)
   START OVER (top right of the prescription) is for big changes to the
   mix itself. It puts every Mix System plugin back to neutral (pass-through)
   and clears the prescription; play the song from the top, then press
-  GO TO FIX, so The Master hears the untreated mix. (GO TO FIX does this
+  PRESCRIBE, so The Master hears the untreated mix. (PRESCRIBE does this
   for you if the bus plugins are still set from an earlier prescription.)
   With GENRE on AUTO, the report keeps judging against the genre the
   prescription aimed at until you start over.
@@ -320,7 +320,7 @@ GENRE PROFILES
   and pick the .json file. Every copy of The Master on your computer uses
   it. PROFILES > Restore factory profiles undoes it.
 
-REBEL (on every other Mix System plugin)
+REBEL (on The Freak, Chop Shop, Dominatrix, BuzzKill, Flatliner and Low Blow; not The Servant)
   A plugin with REBEL on is left exactly as you set it: The Master sends it nothing, still hears what it
   does, and plans the rest around it. A Chop Shop or Dominatrix you put on a track without being asked
   gets REBEL switched on by The Master, once; turn it off to hand that plugin over.

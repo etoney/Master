@@ -697,7 +697,7 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
         {
             startOver();
             return "The plugins on the master bus were still set from an earlier prescription, so The Master put every Mix System plugin back to neutral. "
-                   "Play the song again from the top, then press GO TO FIX.";
+                   "Play the song again from the top, then press PRESCRIBE.";
         }
     }
     const auto target = resolveTarget (in);
@@ -737,7 +737,6 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
             t.transSeconds = (float) (double) tr.getProperty ("seconds", 0.0);
         }
         if (t.seconds < 1.0) continue;   // silent track (or nothing measured yet)
-        t.rebel = isRebel (id);
         tracks.push_back (t);
     }
     // series on the slots everyone has

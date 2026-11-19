@@ -1268,7 +1268,7 @@ MasterEditor::MasterEditor (MasterProcessor& p) : AudioProcessorEditor (&p), pro
     stepBar.onPick = [this] (int i)
     {
         if (i <= 1) { setPage (0); return; }
-        if (proc.getChainStage() == 0) { runNextButton(); return; }   // PRESCRIPTION before there is one = GO TO FIX
+        if (proc.getChainStage() == 0) { runNextButton(); return; }   // PRESCRIPTION before there is one = PRESCRIBE
         setPage (1);
     };
     addAndMakeVisible (stepBar);
@@ -1363,7 +1363,7 @@ MasterEditor::MasterEditor (MasterProcessor& p) : AudioProcessorEditor (&p), pro
     nextButton.onClick = [this] { runNextButton(); };
     addAndMakeVisible (nextButton);
     stepList.setInterceptsMouseClicks (false, false);
-    newRxButton.setTooltip ("Start over after big changes to the mix: every Mix System plugin goes back to neutral, then play the song and press GO TO FIX. "
+    newRxButton.setTooltip ("Start over after big changes to the mix: every Mix System plugin goes back to neutral, then play the song and press PRESCRIBE. "
                             "(For plugins you've added or removed, the main button says UPDATE: no need to start over.)");
     newRxButton.onClick = [this] { startOverNow(); };
     chainView.setInterceptsMouseClicks (false, true);   // the YOUR TRACKS list scrolls
@@ -1458,7 +1458,7 @@ void MasterEditor::updateVisibility()
     newRxButton.setVisible (page == 1 && chainMode && proc.getChainStage() >= 1);
     lastOutdated = proc.chainOutdated();
     updateSteps();
-    nextButton.setTooltip (page == 0 ? juce::String ("The next step. After you've played the song: GO TO FIX, where The Master prescribes your Castle Danger plugins.")
+    nextButton.setTooltip (page == 0 ? juce::String ("The next step. After you've played the song: PRESCRIBE, where The Master writes the prescription for your Castle Danger plugins.")
                          : lastOutdated ? "You've added or removed plugins on your tracks since the prescription. UPDATE plans them in from the same analysis"
                                              + juce::String (proc.getChainStage() >= 2 ? " and sends the new settings." : ".")
                                            : juce::String ("Does the next step: PRESCRIBE, then APPLY, then REFINE."));
@@ -1480,7 +1480,7 @@ void MasterEditor::startOverNow()
     changeLog.setEntries (proc.getLog(), logViewport.getWidth() - 12, "Nothing changed yet.");
     setPage (0);
     showMessage ("STARTING OVER", "Every Mix System plugin is back to neutral and the prescription is cleared, so The Master hears your mix as it really is. "
-                                  "Play the song from the top (the whole song is best), then press GO TO FIX.");
+                                  "Play the song from the top (the whole song is best), then press PRESCRIBE.");
 }
 
 void MasterEditor::updateSteps()
@@ -1493,7 +1493,7 @@ void MasterEditor::updateSteps()
     const int now = stage == 0 ? (heard.valid && heard.seconds >= 20.0 ? 1 : 0) : stage == 1 ? (allLinked ? 3 : 2) : 4;
     const int open = stage == 0 ? 2 : 4;
     juce::String label;
-    if (page == 0) label = stage == 0 && now == 0 ? "PLAY YOUR SONG" : "GO TO FIX  >";
+    if (page == 0) label = stage == 0 && now == 0 ? "PLAY YOUR SONG" : "PRESCRIBE  >";
     else label = chainButtonText();
     if (stepBar.now != now || stepBar.open != open || stepBar.page != page) { stepBar.now = now; stepBar.open = open; stepBar.page = page; stepBar.repaint(); }
     if (nextButton.getButtonText() != label) nextButton.setButtonText (label);
@@ -1509,7 +1509,7 @@ void MasterEditor::runNextButton()
     {
         showMessage ("PLAY YOUR SONG", "Put The Servant on every track first (it sets its ROLE from the track name; check it), so it listens along. Then press RESET and play your song "
                                        "from the top (the whole song is best). The report fills in as it plays; "
-                                       "after 20 seconds this button says GO TO FIX.");
+                                       "after 20 seconds this button says PRESCRIBE.");
         return;
     }
     setPage (1);

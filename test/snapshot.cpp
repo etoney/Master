@@ -554,13 +554,6 @@ int main (int argc, char** argv)
                        juce::String::formatted ("a Servant on the drum bus is found as a bus (%d found)", (int) found.size()));
                 check (mst::findBuses (tr).empty(), "ordinary tracks aren't taken for buses");
             }
-            {   // REBEL on a Servant: measured and balanced around, never changed
-                auto rb = tr; rb[0].rebel = true;
-                const auto rr = mst::planTracks (mix, rock, rb, mixS);
-                bool none = rr.tracks[0].rebel && rr.tracks[0].params.empty() && rr.tracks[0].summary() == "REBEL: HANDS OFF";
-                for (auto v : rr.tracks[0].eq) none = none && v == 0.0f;
-                check (none && rr.tracks[0].trimDb == 0.0f && ! rr.tracks[0].compOn, "REBEL on a Servant: The Master plans nothing for that track");
-            }
             auto jumpy = tr; for (size_t k = 0; k < jumpy[2].series.size(); ++k) if ((k / 40) % 2 == 1) jumpy[2].series[k] *= 0.05f;
             const auto la = mst::flatlinerAdvice (jumpy);
             const juce::String lw = la.empty() ? juce::String() : la[0].where;
@@ -1342,7 +1335,7 @@ int main (int argc, char** argv)
             dom.params["outputDb"] = 8.0;
             pump (600);
             const auto err = p.prescribe (false);
-            check (err.contains ("back to neutral") && ! p.getChainPlan().valid, "GO TO FIX through bus plugins still set from before: they go back to neutral first (" + err.substring (0, 40) + ")");
+            check (err.contains ("back to neutral") && ! p.getChainPlan().valid, "PRESCRIBE through bus plugins still set from before: they go back to neutral first (" + err.substring (0, 40) + ")");
         }
         pinger.stopTimer();
     }
