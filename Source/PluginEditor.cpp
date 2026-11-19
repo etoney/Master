@@ -2017,7 +2017,7 @@ juce::String MasterEditor::diagnosticsText() const
         }
         if (! cp.adds.empty()) { s << "\nASKED TO ADD\n"; for (auto& a : cp.adds) s << "  " << mst::plugDisplayName (a.kind) << " on " << (a.track.isNotEmpty() ? a.track : juce::String ("guitar + bass tracks")) << ": " << a.why << "\n"; }
         if (! cp.onTracks.isEmpty()) s << "\nNOTES\n  " << cp.onTracks.joinIntoString ("\n  ") << "\n";
-        if (cp.tracksNote.isNotEmpty()) s << "  " << cp.tracksNote << "\n";
+        if (cp.tracksNote.isNotEmpty() && ! cp.onTracks.contains (cp.tracksNote)) s << "  " << cp.tracksNote << "\n";
         if (! cp.cantFix.isEmpty()) s << "\nCAN'T FIX\n  " << cp.cantFix.joinIntoString ("\n  ") << "\n";
     }
 

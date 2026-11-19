@@ -445,6 +445,7 @@ void MasterProcessor::onLinkMessage (const juce::var& m)
             p.env = m.getProperty ("env", {});
             p.extra = m.getProperty ("extra", {});
             if (kind == "servant") mergeEnv (peerHist[from], p.env, "out");
+            rebindTrackPlan (from, kind, p.extra.getProperty ("track", "").toString());
         }
         p.params = m.getProperty ("params", p.params);
         p.seen = juce::Time::getMillisecondCounter();
@@ -452,6 +453,22 @@ void MasterProcessor::onLinkMessage (const juce::var& m)
             for (auto& e : chainLog)
                 if (e.peerId.isNotEmpty() ? e.peerId == from : e.plugin == mst::plugDisplayName (kind)) e.confirmed = true;
         if (isNew || type == "applied") ++linkVersion;
+    }
+}
+
+// Plugin ids are new every time the DAW opens the project: a planned track plugin that comes back
+// is matched to its plan by its kind and its track's name, so the plan carries over without UPDATE.
+void MasterProcessor::rebindTrackPlan (const juce::String& id, const juce::String& kind, const juce::String& track)
+{
+    if (! chainPlan.valid || track.isEmpty()) return;
+    for (auto& t : chainPlan.tracks) if (t.id == id) return;
+    for (auto& t : chainPlan.tracks)
+    {
+        if (t.kind != kind || ! t.name.equalsIgnoreCase (track) || peers.count (t.id) > 0) continue;
+        for (auto& e : chainLog) if (e.peerId == t.id) e.peerId = id;
+        t.id = id;
+        ++linkVersion;
+        return;
     }
 }
 
@@ -750,7 +767,7 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
             if (it->plugin == "master" && it->param == "eq") it = chainPlan.changes.erase (it); else ++it;
         if (any) chainPlan.changes.push_back ({ "master", "eq", "TONE MATCH EQ", 1.0f, 1.0f, "ON",
                                                 "Only what the tracks couldn't fix within 6 dB each.", false });
-        if (tr.note.isNotEmpty()) chainPlan.onTracks.add (tr.note);
+        if (tr.note.isNotEmpty()) chainPlan.onTracks.addIfNotAlreadyThere (tr.note);
     }
 
     const auto& G = genres[(size_t) target.index];

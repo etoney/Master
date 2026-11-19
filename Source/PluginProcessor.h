@@ -170,6 +170,7 @@ private:
     void linkTick();
     juce::String resolvePeer (const juce::String& kind) const;
     std::vector<juce::String> detectChain() const;   // peer ids feeding The Master, first .. last
+    void rebindTrackPlan (const juce::String& id, const juce::String& kind, const juce::String& track);
     void sendSet (const juce::String& peerId, const std::map<juce::String, float>& params, const juce::String& note);
     struct LinkTimer : juce::Timer { std::function<void()> fn; void timerCallback() override { fn(); } };
     juce::String servantOnSameTrack (const Peer& helper) const;   // by track name, else by level fingerprint

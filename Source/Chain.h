@@ -349,7 +349,7 @@ inline ChainPlan planChain (const Features& in, const GenreProfile& g, bool head
     }
     if (zLra > 1.5f)
         c.onTracks.add ("FLATLINER on the lead vocal if it's the part jumping in level.");
-    c.onTracks.add ("THE SERVANT on your tracks: set each one's ROLE, and The Master shares the tone, compression and level fixes out to the tracks that cause them.");
+    c.onTracks.add ("THE SERVANT on your tracks (each sets its ROLE from the track name: check them), and The Master shares the tone, compression and level fixes out to the tracks that cause them.");
     return c;
 }
 } // namespace mst
