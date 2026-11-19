@@ -1127,6 +1127,9 @@ bool MasterProcessor::chainOutdated() const
         const bool heard = (double) x.getProperty ("seconds", 0.0) >= 5.0;
         if (t.note == "NOT ENOUGH HEARD YET" && heard) return true;
         if (t.note == "NOT HEARD YET" && heard && (double) x.getProperty ("songPeakDb", -100.0) > -90.0) return true;
+        // Low Blow was planned before the kick reached its sidechain, and now it hears it: plan it properly
+        if (t.kind == "lowblow" && t.note.contains ("NO KICK ON SIDECHAIN") && (bool) x.getProperty ("sidechain", false)
+            && (double) x.getProperty ("kickSeconds", 0.0) >= 5.0) return true;
     }
     for (auto& [id, p] : peers)
     {
