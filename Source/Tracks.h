@@ -8,7 +8,8 @@
 //   2. Tone: where the mix misses the genre in a band, the correction is shared out among the
 //      tracks that actually make that band, biggest contributor moves most. ROLES steer it:
 //      kick and bass keep the low end, the lead keeps its presence.
-//   3. Balance (TRIM): the lead should carry a fair share of the 500 Hz - 4 kHz range.
+//   3. Balance (TRIM): the vocals should carry a fair share of the 500 Hz - 4 kHz range, with the lead
+//      on top of its backing vocals (a big stack only just under it).
 //   4. Compression: if the mix's peaks stick out, the tracks that make the peaks get compressed.
 #include "Cure.h"
 #include <set>
@@ -194,55 +195,67 @@ inline TracksResult planTracks (const Features& mix, const GenreProfile& g, std:
         res.residualEq[(size_t) b] = std::abs (left) >= 1.0f ? std::round (left * 10.0f) / 10.0f : 0.0f;
     }
 
-    // 3) balance: the lead should carry a fair share of 500 Hz - 4 kHz
+    // 3) balance, in 500 Hz - 4 kHz. Two questions, answered together so the moves don't stack:
+    //    a) do the vocals as a whole (lead + backing) get buried under the band?
+    //    b) does the lead sit on top of its backing vocals?
     {
-        double lead = 0, other = 0;
+        double lead = 0, back = 0, other = 0;
+        int nBack = 0;
         for (size_t i = 0; i < n; ++i)
-            for (int b = 4; b <= 6; ++b) (roleIs (plans[i].role, { "Lead" }) ? lead : other) += c[i][(size_t) b];
-        if (lead > 0 && other > 0)
         {
-            const double share = lead / (lead + other);
+            const bool isLead = roleIs (plans[i].role, { "Lead" }), isBack = roleIs (plans[i].role, { "Backing" });
+            if (isBack && plans[i].share > 0) ++nBack;
+            for (int b = 4; b <= 6; ++b) (isLead ? lead : (isBack ? back : other)) += c[i][(size_t) b];
+        }
+        float leadT = 0, backT = 0;
+        juce::String leadWhy, backWhy;
+        const double voc = lead + back;
+        if (voc > 0 && other > 0)
+        {
+            const double share = voc / (voc + other);
             double targetShare = -1;
-            if (share < 0.25) targetShare = 0.30;
+            if (share < 0.20) targetShare = 0.25;
             else if (share > 0.65) targetShare = 0.55;
             if (targetShare > 0)
             {
-                const double a = targetShare * other / ((1.0 - targetShare) * lead);
-                const float t = (float) juce::jlimit (-4.0, 4.0, 10.0 * std::log10 (a));
-                for (auto& p : plans)
-                    if (roleIs (p.role, { "Lead" }))
-                    {
-                        p.trimDb = std::round (t * 10.0f) / 10.0f;
-                        p.why.add ("TRIM " + juce::String (p.trimDb > 0 ? "+" : "") + juce::String (p.trimDb, 1) + " dB: the lead makes "
-                                   + juce::String (juce::roundToInt (share * 100.0)) + "% of the mix's 500 Hz - 4 kHz range; it " + (t > 0 ? "gets buried" : "sits too far on top") + ".");
-                    }
+                const double a = targetShare * other / ((1.0 - targetShare) * voc);
+                const float t = (float) juce::jlimit (-3.0, 3.0, 10.0 * std::log10 (a));
+                leadT += t; backT += t;
+                const juce::String what = back > 0 ? "the vocals (lead and backing together) make " : "the lead makes ";
+                const juce::String why = what + juce::String (juce::roundToInt (share * 100.0)) + "% of the mix's 500 Hz - 4 kHz range; "
+                                       + (back > 0 ? (t > 0 ? "they get buried" : "they sit too far on top") : (t > 0 ? "it gets buried" : "it sits too far on top"));
+                leadWhy = why; backWhy = why;
             }
         }
-        // backing vocals sit under the lead: if their 500 Hz - 4 kHz comes within about 4 dB of the
-        // lead's, pull them down so the lead stays on top
+        if (lead > 0 && back > 0)
         {
-            double leadV = 0, backV = 0;
-            for (size_t i = 0; i < n; ++i)
-                for (int bb = 4; bb <= 6; ++bb)
-                {
-                    if (roleIs (plans[i].role, { "Lead" })) leadV += c[i][(size_t) bb];
-                    else if (roleIs (plans[i].role, { "Backing" })) backV += c[i][(size_t) bb];
-                }
-            if (leadV > 0 && backV > 0)
+            // a stack of backing vocals (gang vocals, doubles, harmonies) is meant to be big: it only has
+            // to sit a little under the lead. One or two backing parts sit further down.
+            const double wantGap = nBack >= 4 ? 2.0 : 4.0;
+            const double gapDb = 10.0 * std::log10 (lead / back);
+            if (gapDb < wantGap)
             {
-                const double gapDb = 10.0 * std::log10 (leadV / backV);   // how far the backing sits under the lead
-                if (gapDb < 4.0)
-                {
-                    const float t = (float) -juce::jlimit (0.0, 6.0, 6.0 - gapDb);
-                    for (auto& p : plans)
-                        if (roleIs (p.role, { "Backing" }))
-                        {
-                            p.trimDb = std::round (t * 10.0f) / 10.0f;
-                            p.why.add ("TRIM " + juce::String (p.trimDb, 1) + " dB: the backing vocals sit only " + juce::String (gapDb, 1)
-                                       + " dB under the lead in 500 Hz - 4 kHz; they should support it from about 6 dB below, not compete.");
-                        }
-                }
+                const double need = wantGap - gapDb;
+                const float up = (float) juce::jlimit (0.0, 1.5, need / 3.0);           // the lead comes up a little
+                const float down = (float) juce::jlimit (0.0, 4.0, need - up);          // the backing does most of the work
+                leadT += up; backT -= down;
+                const juce::String why = "the backing vocals sit " + juce::String (std::abs (gapDb), 1) + " dB " + (gapDb < 0 ? "over" : "under")
+                                       + " the lead in 500 Hz - 4 kHz; " + (nBack >= 4 ? "a stack of " + juce::String (nBack) + " backing parts should sit about 2 dB under it"
+                                                                                    : "they should support it from about 4 dB below");
+                leadWhy << (leadWhy.isEmpty() ? "" : "; and ") << why;
+                backWhy << (backWhy.isEmpty() ? "" : "; and ") << why;
             }
+        }
+        leadT = juce::jlimit (-3.0f, 3.0f, leadT);
+        backT = juce::jlimit (-4.0f, 3.0f, backT);
+        for (auto& p : plans)
+        {
+            const bool isLead = roleIs (p.role, { "Lead" }), isBack = roleIs (p.role, { "Backing" });
+            const float t = isLead ? leadT : (isBack ? backT : 0.0f);
+            const auto r = std::round (t * 10.0f) / 10.0f;
+            if (std::abs (r) < 0.5f || ! (isLead || isBack)) continue;
+            p.trimDb = r;
+            p.why.add ("TRIM " + juce::String (r > 0 ? "+" : "") + juce::String (r, 1) + " dB: " + (isLead ? leadWhy : backWhy) + ".");
         }
         double bottom = 0, rest = 0;
         for (size_t i = 0; i < n; ++i)

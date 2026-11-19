@@ -444,7 +444,7 @@ void MasterProcessor::onLinkMessage (const juce::var& m)
             p.version = m.getProperty ("version", "").toString();
             p.env = m.getProperty ("env", {});
             p.extra = m.getProperty ("extra", {});
-            if (kind == "servant") mergeEnv (peerHist[from], p.env, "out");
+            if (kind == "servant") mergeEnv (peerHist[from], p.env, "out", true);
             rebindTrackPlan (from, kind, p.extra.getProperty ("track", "").toString());
         }
         p.params = m.getProperty ("params", p.params);
@@ -503,7 +503,7 @@ void MasterProcessor::linkTick()
     if (isListening()) mergeEnv (myHist, e, "in");
 }
 
-void MasterProcessor::mergeEnv (std::map<juce::int64, float>& hist, const juce::var& env, const char* key)
+void MasterProcessor::mergeEnv (std::map<juce::int64, float>& hist, const juce::var& env, const char* key, bool keepSilence)
 {
     const auto* a = env.getProperty (key, {}).getArray();
     if (a == nullptr) return;
@@ -511,7 +511,9 @@ void MasterProcessor::mergeEnv (std::map<juce::int64, float>& hist, const juce::
     for (int i = 0; i < a->size(); ++i)
     {
         const double db = (*a)[i];
-        if (db <= -99.0) continue;
+        // a silent slot from a track is real: the vocal resting between lines. Without it, a
+        // track that only plays now and then shares no slots with the others and can't be measured.
+        if (db <= -99.0) { if (keepSilence) hist[first + i] = 0.0f; continue; }
         hist[first + i] = (float) std::pow (10.0, db / 10.0);
     }
     while (hist.size() > 12000) hist.erase (hist.begin());   // keep the last 20 minutes
@@ -896,20 +898,13 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
     }
     if (! anyFlat)
     {
-        // a lead that jumps around: from its Servant's fingerprint
-        for (size_t i = 0; i < tracks.size(); ++i)
+        const auto [where, why] = mst::flatlinerAdvice (tracks);
+        if (where.isNotEmpty())
         {
-            if (! mst::roleIs (tracks[i].role, { "Lead" })) continue;
-            const float swing = mst::leadSwingDb (tracks[i].series);
-            if (swing > 10.0f)
-            {
-                for (int k = chainPlan.onTracks.size(); --k >= 0;) if (chainPlan.onTracks[k].startsWith ("FLATLINER")) chainPlan.onTracks.remove (k);
-                chainPlan.removeAdds ("flatliner");
-                chainPlan.adds.push_back ({ "flatliner", tracks[i].name, "Its level swings " + juce::String (swing, 0) + " dB. Put Flatliner first on the track, then press UPDATE." });
-                chainPlan.onTracks.insert (0, "FLATLINER on " + (tracks[i].name.isNotEmpty() ? tracks[i].name : juce::String ("the lead"))
-                                              + ": its level swings " + juce::String (swing, 0) + " dB. Put it first on that track, then press UPDATE.");
-                break;
-            }
+            for (int k = chainPlan.onTracks.size(); --k >= 0;) if (chainPlan.onTracks[k].startsWith ("FLATLINER")) chainPlan.onTracks.remove (k);
+            chainPlan.removeAdds ("flatliner");
+            chainPlan.adds.push_back ({ "flatliner", where, why });
+            chainPlan.onTracks.insert (0, "FLATLINER on " + where + ": " + why);
         }
     }
     chainStage = 1;

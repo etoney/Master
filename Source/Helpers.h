@@ -102,6 +102,39 @@ inline float leadSwingDb (const std::vector<float>& series)
     return act[act.size() * 9 / 10] - act[act.size() / 10];
 }
 
+// Flatliner, where it's needed: vocals that jump around. When the vocal is spread over several
+// tracks (doubles, comps, harmonies, gang vocals), ride them together on a vocal bus; one lead
+// on its own track. Returns { where, why }, both empty when nothing swings.
+inline std::pair<juce::String, juce::String> flatlinerAdvice (const std::vector<TrackInfo>& tracks)
+{
+    std::vector<size_t> vox;
+    int leadIdx = -1;
+    for (size_t i = 0; i < tracks.size(); ++i)
+    {
+        if (roleIs (tracks[i].role, { "Lead" })) { vox.push_back (i); if (leadIdx < 0) leadIdx = (int) i; }
+        else if (roleIs (tracks[i].role, { "Backing" })) vox.push_back (i);
+    }
+    const float leadSwing = leadIdx >= 0 ? leadSwingDb (tracks[(size_t) leadIdx].series) : 0.0f;
+    float voxSwing = 0;
+    if (vox.size() >= 3)
+    {
+        const size_t T = tracks[vox[0]].series.size();
+        std::vector<float> sum (T, 0.0f);
+        for (auto i : vox)
+            if (tracks[i].series.size() == T)
+                for (size_t k = 0; k < T; ++k) sum[k] += tracks[i].series[k];
+        voxSwing = leadSwingDb (sum);
+    }
+    const float swing = std::max (leadSwing, voxSwing);
+    if (vox.size() >= 3 && swing > 10.0f)
+        return { "a vocal bus", "Your vocals are spread over " + juce::String ((int) vox.size()) + " tracks and their level swings " + juce::String (swing, 0)
+                                + " dB. Send them all to one vocal bus (name it \"Vox Bus\") and put Flatliner on that bus, then press UPDATE. The Servants stay on the vocal tracks, not on the bus." };
+    if (leadIdx >= 0 && leadSwing > 10.0f)
+        return { tracks[(size_t) leadIdx].name.isNotEmpty() ? tracks[(size_t) leadIdx].name : juce::String ("the lead"),
+                 "Its level swings " + juce::String (leadSwing, 0) + " dB. Put Flatliner first on the track, then press UPDATE." };
+    return {};
+}
+
 inline TrackPlan planFlatliner (const HelperInfo& h, const GenreProfile& g)
 {
     auto p = makeHelperPlan (h, "Lead track");

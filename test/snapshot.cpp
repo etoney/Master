@@ -459,7 +459,16 @@ int main (int argc, char** argv)
         check (res.tracks[0].eq[3] < -1.0f && res.tracks[0].eq[3] < res.tracks[1].eq[3] && res.tracks[0].eq[3] < res.tracks[3].eq[3],
                juce::String::formatted ("the mud (250-500 Hz) is cut mostly on the rhythm guitar that makes it (%.1f dB)", res.tracks[0].eq[3]));
         check (res.tracks[1].eq[0] >= 0.0f && res.tracks[1].eq[1] >= 0.0f, juce::String::formatted ("the bass keeps its low end (sub %+.1f, bass %+.1f dB)", res.tracks[1].eq[0], res.tracks[1].eq[1]));
-        check (res.tracks[2].trimDb > 0.5f, juce::String::formatted ("the buried lead gets turned up (TRIM %+.1f dB)", res.tracks[2].trimDb));
+        {
+            auto quiet = tr;
+            for (auto& v : quiet[2].bandPow) v *= 0.25;
+            for (auto& v : quiet[2].series) v *= 0.25f;
+            std::vector<float> qMix (mixS);
+            for (size_t k = 0; k < qMix.size(); ++k) qMix[k] -= 0.75f * tr[2].series[k] * (float) fader[2];
+            const auto rq = mst::planTracks (mix, rock, quiet, qMix);
+            check (rq.tracks[2].trimDb > 0.5f, juce::String::formatted ("the buried lead gets turned up (TRIM %+.1f dB)", rq.tracks[2].trimDb));
+            check (std::abs (res.tracks[2].trimDb) < 0.01f, juce::String::formatted ("a lead with a fair share of the mids is left alone (TRIM %+.1f dB)", res.tracks[2].trimDb));
+        }
         check (res.tracks[3].compOn && ! res.tracks[0].compOn, juce::String::formatted ("the snare that makes the peaks gets compressed (%.0f%%), the guitar doesn't", res.tracks[3].comp));
         bool punchWhy = false; for (auto& w : res.tracks[3].why) if (w.startsWith ("COMP STYLE PUNCH")) punchWhy = true;
         check (punchWhy && res.tracks[3].params.count ("compStyle") == 0, "the snare's compressor reason names its style (PUNCH); The Master leaves STYLE on AUTO");
@@ -496,8 +505,30 @@ int main (int argc, char** argv)
             const auto rb = mst::planTracks (mix, rock, withBv, {});
             const auto& b = rb.tracks.back();
             bool why = false; for (auto& w : b.why) if (w.startsWith ("TRIM") && w.contains ("under the lead")) why = true;
-            check (b.role == "Backing Vocals" && b.trimDb <= -2.0f && why,
-                   juce::String::formatted ("backing vocals that compete with the lead are pulled under it (TRIM %+.1f dB)", b.trimDb));
+            check (b.role == "Backing Vocals" && b.trimDb <= rb.tracks[2].trimDb - 2.0f && why,
+                   juce::String::formatted ("backing vocals that compete with the lead are pulled under it (TRIM %+.1f dB, lead %+.1f dB)", b.trimDb, rb.tracks[2].trimDb));
+            // a punk stack: 16 backing parts, together 4 dB over the lead. Pull them a few dB under,
+            // never -6 on every one plus +4 on the lead (that throws the lead out on top)
+            auto stack = tr;
+            for (int k = 0; k < 16; ++k)
+            {
+                mst::TrackInfo s = tr[2]; s.id = "bv" + juce::String (k); s.name = "BVox" + juce::String (k); s.role = "Backing Vocals";
+                for (auto& v : s.bandPow) v *= 0.157;   // 16 x 0.157 = 2.5x the lead (+4 dB)
+                for (auto& v : s.series) v *= 0.157f;
+                stack.push_back (s);
+            }
+            const auto rs = mst::planTracks (mix, rock, stack, {});
+            const float lt = rs.tracks[2].trimDb, bt = rs.tracks.back().trimDb;
+            check (lt <= 3.0f && bt >= -4.0f && lt - bt >= 3.0f && lt - bt <= 6.5f,
+                   juce::String::formatted ("a big stack of backing vocals ends up a little under the lead (lead %+.1f, each backing %+.1f dB)", lt, bt));
+            // Flatliner: a lead and its stack, whose level comes and goes -> on a vocal bus
+            for (auto& t : stack) if (t.role.startsWith ("Backing")) { auto& sr = t.series; for (size_t k = 0; k < sr.size(); ++k) if ((k / 50) % 2 == 1) sr[k] *= 0.02f; }
+            const auto [fw, fwhy] = mst::flatlinerAdvice (stack);
+            check (fw == "a vocal bus" && fwhy.contains ("17 tracks"), "Flatliner: vocals spread over many tracks that swing get Flatliner on a vocal bus (" + fw + ")");
+            auto jumpy = tr; for (size_t k = 0; k < jumpy[2].series.size(); ++k) if ((k / 40) % 2 == 1) jumpy[2].series[k] *= 0.05f;
+            const auto [lw, lwhy] = mst::flatlinerAdvice (jumpy);
+            check (lw == "Lead Vox", "Flatliner: a single lead that swings gets it on its own track (" + lw + ")");
+
             bool leadUp = rb.tracks[2].trimDb >= 0.0f;
             check (leadUp, "the lead vocal isn't turned down for the backing vocals");
         }

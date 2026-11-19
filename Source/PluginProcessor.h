@@ -189,7 +189,7 @@ private:
     // and every linked plugin's output, to work out each track's real gain into the mix
     std::map<juce::int64, float> myHist;
     std::map<juce::String, std::map<juce::int64, float>> peerHist;
-    static void mergeEnv (std::map<juce::int64, float>& hist, const juce::var& env, const char* key);
+    static void mergeEnv (std::map<juce::int64, float>& hist, const juce::var& env, const char* key, bool keepSilence = false);
     cdlink::EnvTap env;
     std::unique_ptr<cdlink::Endpoint> link;
     LinkTimer linkTimer;

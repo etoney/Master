@@ -599,6 +599,7 @@ void ChainView::rebuildTracks (const std::vector<mst::ChainPlan::TrackAdd>& adds
         for (auto& p : r.plugs) if (p.kind == "servant") hasServant = true;
         if (hasServant) { ++servants; continue; }
         if (r.track == "Guitar and bass tracks") continue;
+        if (r.track.containsIgnoreCase ("bus")) continue;   // a bus carries tracks that have their own Servants
         r.plugs.push_back ({ "servant", "The Servant", 1, plugOrder ("servant") });
         r.tip << (r.tip.isEmpty() ? "" : "\n") << "ADD The Servant: set its ROLE, so The Master knows what this track is and can balance it.";
     }
