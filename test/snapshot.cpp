@@ -789,8 +789,9 @@ int main (int argc, char** argv)
         mst::HelperInfo fl { "f1", "flatliner", "Lead Vox", "Lead", ex ({ { "p10", -34.0 }, { "p50", -22.0 }, { "p90", -14.0 }, { "floorDb", -70.0 }, { "seconds", 60.0 } }) };
         auto fp = mst::planFlatliner (fl, rockG);
         auto fm = mst::planFlatliner (fl, byId ("punk"));
-        check (std::abs (fp.params.at ("target") + 22.0f) < 0.01f && fp.params.at ("range") >= 10.0f && fm.params.at ("range") < fp.params.at ("range"),
-               juce::String::formatted ("Flatliner: TARGET at the lead's average (%.1f), RANGE from its 20 dB swing (rock %.0f, punk %.0f)",
+        check (std::abs (fp.params.at ("target") + 22.0f) < 0.01f && fp.params.at ("range") >= 5.0f && fp.params.at ("range") <= 8.0f && fm.params.at ("range") < fp.params.at ("range")
+                 && fp.params.at ("follow") == 1.0f && fp.why.joinIntoString (" ").contains ("SECTIONS ON"),
+               juce::String::formatted ("Flatliner: SECTIONS on, TARGET at the lead's average (%.1f), RANGE only evens out words, at most 8 dB (rock %.0f, punk %.0f)",
                                         fp.params.at ("target"), fp.params.at ("range"), fm.params.at ("range")));
         check (fp.params.at ("gate") < -34.0f + 0.01f && fp.params.at ("gate") > -70.0f && fp.params.at ("ride") == 1.0f,
                juce::String::formatted ("Flatliner GATE between the gaps and the quietest words (%.0f dB)", fp.params.at ("gate")));

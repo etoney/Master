@@ -180,13 +180,16 @@ inline TrackPlan planFlatliner (const HelperInfo& h, const GenreProfile& g)
 
     const bool steady = swing < 6.0f;
     const bool backingRide = roleIs (h.role, { "Backing" }) || backingName (h.track);   // the backing vocals: ridden gently
-    const float range = steady || backingRide ? 3.0f : juce::jlimit (3.0f, 12.0f, std::round (swing * factor));
+    // SECTIONS on: the ride follows the vocal's own level over the last few seconds, so a louder chorus
+    // stays louder; the range only has to even out the words, never whole sections
+    const float range = steady || backingRide ? 3.0f : juce::jlimit (3.0f, 8.0f, std::round (swing * factor * 0.6f));
     const float target = juce::jlimit (-40.0f, 0.0f, std::round (p50 * 2.0f) / 2.0f);
     float gate = std::max (floor + 6.0f, -80.0f);
     gate = std::min (gate, p10 - 6.0f);
     gate = juce::jlimit (-80.0f, -20.0f, std::round (gate));
 
     p.params["ride"] = 1.0f;
+    p.params["follow"] = 1.0f;
     p.params["target"] = target;
     p.params["range"] = range;
     p.params["speed"] = speed;
@@ -198,13 +201,15 @@ inline TrackPlan planFlatliner (const HelperInfo& h, const GenreProfile& g)
                : steady
                ? juce::String ("the lead is already steady (it swings only ") + juce::String (swing, 1) + " dB), so just a gentle ride."
                : juce::String ("the lead swings ") + juce::String (swing, 1) + " dB between its quiet and loud parts; " + g.name
-                 + " keeps the lead steady, with some life left in it."));
-    p.why.add ("TARGET " + juce::String (target, 1) + " dB: where the lead already sits on average, so the ride doesn't change its level. "
+                 + " keeps the words even, with some life left in them."));
+    p.why.add ("SECTIONS ON: the ride follows where the vocal has been sitting for the last few seconds, so it evens out the words "
+               "but a louder chorus stays louder and a quiet verse stays quiet.");
+    p.why.add ("TARGET " + juce::String (target, 1) + " dB: where the lead sits on average, used only if you turn SECTIONS off. "
                "The Servant's TRIM does the balance against the band.");
     p.why.add ("SPEED " + juce::String (juce::roundToInt (speed)) + "%: " + (speed >= 55.0f ? "quick, to catch every word." : "natural, like a patient hand on the fader."));
     p.why.add ("GATE " + juce::String (juce::roundToInt (gate)) + " dB: the gaps between phrases sit around " + juce::String (juce::roundToInt (floor))
                + " dB; below the gate the fader freezes, so breaths and room noise aren't pushed up.");
-    p.note = "RANGE " + juce::String (juce::roundToInt (range)) + " dB  //  TARGET " + juce::String (target, 1) + " dB  //  SWING WAS " + juce::String (juce::roundToInt (swing)) + " dB";
+    p.note = "RANGE " + juce::String (juce::roundToInt (range)) + " dB  //  SECTIONS  //  SWING WAS " + juce::String (juce::roundToInt (swing)) + " dB";
     return p;
 }
 //------------------------------------------------------------------------------
