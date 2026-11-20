@@ -1672,7 +1672,7 @@ void MasterEditor::refreshGenres()
 {
     proc.refreshSongProfiles();
     const auto& lib = proc.getLibrary();
-    juce::StringArray ids { "auto" }, names { "AUTO|DETECTS IT" };
+    juce::StringArray ids { "auto" }, names { "AUTO|CLOSEST MATCH" };
     for (int i = 0; i < lib.numBuiltIn(); ++i)
     {
         const auto& g = lib.genres()[(size_t) i];
