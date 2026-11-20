@@ -1,5 +1,5 @@
 #pragma once
-// Castle Danger plugin theme: rusty iron, stencil paint, the castle crest (shared look with Dominatrix, Chop Shop, Possessed...)
+// Castle Danger plugin theme: rusty iron, stencil paint, the castle crest (shared look with Dominatrix, Cutthroat, Possessed...)
 #include <juce_gui_basics/juce_gui_basics.h>
 
 //==============================================================================

@@ -17,7 +17,7 @@ struct ChainChange
 
 struct ChainStep
 {
-    juce::String kind, name, role;       // "chopshop", "Chop Shop", "Shaves the drum peaks..."
+    juce::String kind, name, role;       // "chopshop", "Cutthroat", "Shaves the drum peaks..."
     std::map<juce::String, float> params;
     juce::StringArray notes;             // The Freak: a short reason per band, shown in the plugin
 };
@@ -32,7 +32,7 @@ struct ChainPlan
     bool masterEq = false;                    // The Master's own TONE MATCH EQ is part of the plan
     bool headroom = false;                    // made for -6 dB output (headroom for a separate mastering step)
     FixParams masterFix;                      // its built-in settings in this mode (EQ + safety limiter only)
-    juce::StringArray onTracks;               // advice for individual tracks (BuzzKill, Flatliner...)
+    juce::StringArray onTracks;               // advice for individual tracks (Dead Air, Flatliner...)
     // track plugins The Master asks you to add: kind ("buzzkill", "flatliner", "lowblow"), the track
     // ("" = every guitar and bass track) and the reason (shown as the row's tooltip)
     struct TrackAdd { juce::String kind, track, why; };
@@ -43,7 +43,7 @@ struct ChainPlan
     }
     juce::StringArray cantFix;
     Features before;                          // what the plan was made from
-    std::vector<TrackPlan> tracks;            // The Servant on each linked track, then BuzzKill / Flatliner
+    std::vector<TrackPlan> tracks;            // The Servant on each linked track, then Dead Air / Flatliner
     juce::String tracksNote;
 
     const ChainStep* step (const juce::String& kind) const
@@ -176,10 +176,10 @@ struct ChainPlan
 inline juce::String plugDisplayName (const juce::String& kind)
 {
     if (kind == "freak") return "The Freak";
-    if (kind == "chopshop") return "Chop Shop";
+    if (kind == "chopshop") return "Cutthroat";
     if (kind == "dominatrix") return "Dominatrix";
     if (kind == "servant") return "The Servant";
-    if (kind == "buzzkill") return "BuzzKill";
+    if (kind == "buzzkill") return "Dead Air";
     if (kind == "flatliner") return "Flatliner";
     if (kind == "lowblow") return "Low Blow";
     if (kind == "master") return "The Master";
@@ -233,13 +233,13 @@ inline ChainPlan planChain (const Features& in, const GenreProfile& g, bool head
         }
     }
 
-    // ---- CHOP SHOP: shave the peaks that stick out, so the rest of the chain can get loud cleanly
+    // ---- CUTTHROAT: shave the peaks that stick out, so the rest of the chain can get loud cleanly
     float shave = 0.0f;
     if (zPlr > 0.8f) shave = juce::jlimit (1.5f, 6.0f, in.plr - g.stat (fPlr).mean + 1.0f);
     else if (gain > 4.0f && ! squashed && ! headroom) shave = 2.0f;   // (shaving for loudness is the mastering step's job)
     if (shave > 0.0f)
     {
-        ChainStep s { "chopshop", "Chop Shop", "Shaves the drum peaks that stick out, so Dominatrix can make the mix louder without squashing it." };
+        ChainStep s { "chopshop", "Cutthroat", "Shaves the drum peaks that stick out, so Dominatrix can make the mix louder without squashing it." };
         const float ceiling = juce::jlimit (-24.0f, 0.0f, std::round ((in.samplePeak - shave) * 10.0f) / 10.0f);
         s.params = { { "mode", 0.0f }, { "shape", 1.0f }, { "inputDb", 0.0f }, { "ceilingDb", ceiling }, { "color", 0.0f },
                      { "mix", 100.0f }, { "outputDb", 0.0f }, { "oversample", 2.0f }, { "gainMatch", 0.0f }, { "scraps", 0.0f } };
@@ -302,7 +302,7 @@ inline ChainPlan planChain (const Features& in, const GenreProfile& g, bool head
             // peaks land just under -6 dBFS; no loudness push, the mastering step does that
             out = juce::jlimit (-12.0f, 12.0f, std::round ((-6.3f - (in.truePeak - shave)) * 10.0f) / 10.0f);
             if (squashed) out = std::min (out, 0.0f);
-            whyOut = "OUTPUT set so your peaks (" + juce::String (in.truePeak, 1) + " dBTP" + (shave > 0.0f ? ", after Chop Shop" : "") + ") land just under -6 dB. "
+            whyOut = "OUTPUT set so your peaks (" + juce::String (in.truePeak, 1) + " dBTP" + (shave > 0.0f ? ", after Cutthroat" : "") + ") land just under -6 dB. "
                      "No loudness push: that's left for the mastering step, with 6 dB of headroom to work in.";
         }
 
@@ -344,8 +344,8 @@ inline ChainPlan planChain (const Features& in, const GenreProfile& g, bool head
     // ---- advice for individual tracks
     if (in.humSeconds >= 1.0f)
     {
-        c.onTracks.add ("BUZZKILL on the guitar and bass tracks: " + juce::String (in.humHz) + " Hz hum in the quiet parts. Fix it at the source, not on the master.");
-        c.adds.push_back ({ "buzzkill", "", juce::String (in.humHz) + " Hz hum in the quiet parts: put BuzzKill first on each guitar and bass track (right after the amp sim)." });
+        c.onTracks.add ("DEAD AIR on the guitar and bass tracks: " + juce::String (in.humHz) + " Hz hum in the quiet parts. Fix it at the source, not on the master.");
+        c.adds.push_back ({ "buzzkill", "", juce::String (in.humHz) + " Hz hum in the quiet parts: put Dead Air first on each guitar and bass track (right after the amp sim)." });
     }
     if (zLra > 1.5f)
         c.onTracks.add ("FLATLINER on the lead vocal if it's the part jumping in level.");

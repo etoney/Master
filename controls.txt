@@ -6,8 +6,8 @@
 The Master listens to your mix while you're still mixing (a rough mix with the
 levels roughly balanced is all it needs), compares it with how records in your
 genre usually measure, and tells you what to fix, in plain English. Where one
-of our plugins does the job (The Freak, Dominatrix, Chop Shop, Flatliner,
-BuzzKill) it
+of our plugins does the job (The Freak, Dominatrix, Cutthroat, Flatliner,
+Dead Air) it
 tells you which one and how to set it.
 
 THE STEP BAR (under the genre bar) is the way through, five steps:
@@ -136,9 +136,9 @@ THE FIX  (The Master sets your plugins for you)
   the master bus, then sets their controls for you over Castle Danger Link
   (automatic, offline, on your computer only).
 
-  Needs Dominatrix 1.3+, Chop Shop 1.2+, The Freak 1.0+ and, for tracks,
+  Needs Dominatrix 1.3+, Cutthroat 1.2+, The Freak 1.0+ and, for tracks,
   The Servant 0.7+,
-  BuzzKill 2.1+, Flatliner 1.1+ and Low Blow 1.0+.
+  Dead Air 2.1+, Flatliner 1.1+ and Low Blow 1.0+.
 
   OUTPUT (top of THE CURE)
     -6 dB  (default) a pre-master for a separate mastering step: peaks are
@@ -159,7 +159,7 @@ THE FIX  (The Master sets your plugins for you)
      the chain, in order, for example:
         1 THE FREAK   dynamic EQ: cuts the ranges that jump out, only when
                       they do (only prescribed when your mix needs it)
-        2 CHOP SHOP   shaves the peaks that stick out
+        2 CUTTHROAT   shaves the peaks that stick out
         3 DOMINATRIX  glue, colour, stereo; loudness into the -1 dB ceiling,
                       or peaks held at -6 dB with OUTPUT at -6 dB
         4 THE MASTER  last: measures, plus the tone EQ and a safety limiter
@@ -179,7 +179,7 @@ THE FIX  (The Master sets your plugins for you)
      Shop's CEILING if the peaks still stick out), and explains each step.
   Override anything on the plugins themselves at any time.
 
-  UPDATE: added BuzzKill, Flatliner, Low Blow or The Servant to a track (or
+  UPDATE: added Dead Air, Flatliner, Low Blow or The Servant to a track (or
   took one off) after prescribing? The new one turns green as soon as it
   links, and the main button says UPDATE. Press it: The Master plans the
   tracks again from the same analysis (no need to play the song again) and,
@@ -234,7 +234,7 @@ THE FIX  (The Master sets your plugins for you)
            the mix's bite (4-8 kHz) is already hot.
   All of it comes from the genre's MIX profile: no instrument profiles and
   no stem splitting. YOUR TRACKS lists each track once, with the plugins
-  to put on it in order (e.g. 1 BUZZKILL > 2 THE SERVANT). A green lamp
+  to put on it in order (e.g. 1 DEAD AIR > 2 THE SERVANT). A green lamp
   means that plugin is linked to The Master; a red ring means add it
   (hover a track for the reason). The list scrolls when you have more
   tracks than fit. APPLY sets them along with the master bus, and every
@@ -246,13 +246,13 @@ THE FIX  (The Master sets your plugins for you)
   button waits for them), then The Master plans the tone, level and comp.
   So: press RESET, play the whole song, then PRESCRIBE.
 
-  BUZZKILL, FLATLINER AND LOW BLOW ON YOUR TRACKS
+  DEAD AIR, FLATLINER AND LOW BLOW ON YOUR TRACKS
   They link by themselves too, and The Master works out which track each
   one is on (by track name, or by matching it to that track's Servant).
   They show under YOUR TRACKS in the row of the track they're on, in the
-  order they go: BuzzKill (right after the amp sim), Flatliner, The
-  Servant, Dominatrix, Chop Shop, then Low Blow.
-    BUZZKILL   RELEASE for the genre and the part (tight for metal and punk
+  order they go: Dead Air (right after the amp sim), Flatliner, The
+  Servant, Dominatrix, Cutthroat, then Low Blow.
+    DEAD AIR   RELEASE for the genre and the part (tight for metal and punk
                rhythm, looser for rock, gentler on leads and bass, a bit
                tighter on a noisy track); HEAR REMOVED off. The mix's hum
                and the track's noise floor are given as the reasons.
@@ -260,8 +260,8 @@ THE FIX  (The Master sets your plugins for you)
                change the balance), RANGE from how much the lead swings and
                the genre, SPEED and GATE. A lead Flatliner rides doesn't
                also get The Servant's compressor for its jumps.
-    CHOP SHOP  on a kick, snare or drum track whose hits make the mix's
-               peaks (Chop Shop 1.2+). CEILING a few dB under that track's
+    CUTTHROAT  on a kick, snare or drum track whose hits make the mix's
+               peaks (Cutthroat 1.2+). CEILING a few dB under that track's
                loudest hit (deeper the more its hits stick out), MASTER mode,
                HARD knee (SOFT on a full kit), 2x. That track's Servant
                compressor is turned off: the clipper takes the peaks, with
@@ -270,7 +270,7 @@ THE FIX  (The Master sets your plugins for you)
                phones and small speakers (Dominatrix 1.3+). Saturation only:
                TUBE for rock, WHIP for metal, punk and hard rock; DISCIPLINE
                0, CEILING OFF, MATCH on (the level doesn't change).
-    A Chop Shop or Dominatrix counts as a track plugin when its DAW track
+    A Cutthroat or Dominatrix counts as a track plugin when its DAW track
     name matches one of your Servants' tracks; the ones on the master bus
     stay the bus plugins.
     LOW BLOW   on the bass, with the kick on its sidechain. From the Kick
@@ -281,7 +281,7 @@ THE FIX  (The Master sets your plugins for you)
                before the next one. It tells you if no kick is arriving on
                the sidechain.
   If they're not there, the prescription asks for them when the mix needs
-  them: BuzzKill when there's hum, Flatliner when the lead swings more than
+  them: Dead Air when there's hum, Flatliner when the lead swings more than
   about 10 dB, Low Blow when kick and bass are within 10 dB of each other in
   the same low band.
 
@@ -320,7 +320,7 @@ GENRE PROFILES
   and pick the .json file. Every copy of The Master on your computer uses
   it. PROFILES > Restore factory profiles undoes it.
 
-REBEL (on The Freak, Chop Shop, Dominatrix, BuzzKill, Flatliner and Low Blow; not The Servant)
+REBEL (on The Freak, Cutthroat, Dominatrix, Dead Air, Flatliner and Low Blow; not The Servant)
   A plugin with REBEL on is left exactly as you set it: The Master sends it nothing, still hears what it
-  does, and plans the rest around it. A Chop Shop or Dominatrix you put on a track without being asked
+  does, and plans the rest around it. A Cutthroat or Dominatrix you put on a track without being asked
   gets REBEL switched on by The Master, once; turn it off to hand that plugin over.

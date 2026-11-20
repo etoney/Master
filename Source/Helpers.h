@@ -1,6 +1,6 @@
 #pragma once
-// THE MASTER - the other Castle Danger plugins on your tracks: BUZZKILL (noise / hum), FLATLINER
-// (rides a lead that jumps around), LOW BLOW (kick/bass ducker), CHOP SHOP (clips drum peaks at the
+// THE MASTER - the other Castle Danger plugins on your tracks: DEAD AIR (noise / hum), FLATLINER
+// (rides a lead that jumps around), LOW BLOW (kick/bass ducker), CUTTHROAT (clips drum peaks at the
 // source) and DOMINATRIX (saturates a thin bass). Each one reports what it hears on its own track;
 // The Master sets it from that, from the track's ROLE (its Servant's) and from the genre.
 #include "Tracks.h"
@@ -29,10 +29,10 @@ inline TrackPlan makeHelperPlan (const HelperInfo& h, const juce::String& fallba
 }
 
 //------------------------------------------------------------------------------
-// BUZZKILL: it learns the noise by itself. The Master picks how tight it closes, from the genre
+// DEAD AIR: it learns the noise by itself. The Master picks how tight it closes, from the genre
 // (metal and punk palm mutes want a hard stop, looser genres want tails), the part (a lead's
 // sustain breathes, a rhythm part chugs) and how noisy the track really is.
-// a track whose noise is too quiet to hear: BuzzKill has nothing to remove there
+// a track whose noise is too quiet to hear: Dead Air has nothing to remove there
 constexpr double kCleanFloorDb = -75.0;
 inline bool buzzKillClean (const juce::var& extra)
 {
@@ -68,7 +68,7 @@ inline TrackPlan planBuzzKill (const HelperInfo& h, const Features& mix, const G
     p.why.add ("RELEASE " + juce::String (juce::roundToInt (rel * 100.0f)) + "%: " + style + ".");
     if (buzzKillClean (h.extra))
     {
-        p.why.add ("CLEAN: this track's noise sits at " + juce::String (floorDb, 0) + " dBFS, far too quiet to hear, so BuzzKill has nothing to remove here."
+        p.why.add ("CLEAN: this track's noise sits at " + juce::String (floorDb, 0) + " dBFS, far too quiet to hear, so Dead Air has nothing to remove here."
                    + (mix.humSeconds >= 1.0f ? juce::String (" The mix's " + juce::String (mix.humHz) + " Hz hum comes from another track.") : juce::String()));
         p.why.add ("HEAR REMOVED: OFF (so you never print the noise by mistake).");
         p.note = "RELEASE " + juce::String (juce::roundToInt (rel * 100.0f)) + "%  //  CLEAN, NOTHING TO REMOVE";
@@ -76,12 +76,12 @@ inline TrackPlan planBuzzKill (const HelperInfo& h, const Features& mix, const G
     }
     if (mix.humSeconds >= 1.0f)
         p.why.add ("The mix has " + juce::String (mix.humHz) + " Hz hum in its quiet parts (" + juce::String ((int) mix.humSeconds)
-                   + " s). BuzzKill removes it here, at the source, so The Master doesn't have to notch the whole mix.");
+                   + " s). Dead Air removes it here, at the source, so The Master doesn't have to notch the whole mix.");
     if (learned && playDb > -100.0)
         p.why.add ("This track's noise floor is " + juce::String (floorDb, 0) + " dBFS, " + juce::String (snr, 0) + " dB under your playing"
                    + (snr < 30.0 ? ": noisy, worth gating." : "."));
     else
-        p.why.add ("BuzzKill hasn't heard this track's noise yet: play a second of silence (nobody playing) and it learns it by itself.");
+        p.why.add ("Dead Air hasn't heard this track's noise yet: play a second of silence (nobody playing) and it learns it by itself.");
     p.why.add ("HEAR REMOVED: OFF (so you never print the noise by mistake).");
     p.note = "RELEASE " + juce::String (juce::roundToInt (rel * 100.0f)) + "%"
            + (learned && playDb > -100.0 ? "  //  NOISE " + juce::String (floorDb, 0) + " dB" : juce::String ("  //  NOISE NOT LEARNED YET"));
@@ -308,7 +308,7 @@ inline TrackPlan planLowBlow (const HelperInfo& h, const LowClash& clash, const 
 }
 
 //------------------------------------------------------------------------------
-// CHOP SHOP ON A DRUM TRACK: clip the hits that make the mix's peaks at the source. A clipper shaves
+// CUTTHROAT ON A DRUM TRACK: clip the hits that make the mix's peaks at the source. A clipper shaves
 // the spike off each hit and keeps the punch, where a compressor softens it; The Servant's
 // compressor on that track is switched off so the two don't double up.
 inline bool wantsDrumClip (const TrackPlan& sv)
@@ -325,7 +325,7 @@ inline TrackPlan planTrackChop (const HelperInfo& h, const TrackInfo* t, const G
     const double secs = h.extra.getProperty ("seconds", 0.0);
     if (secs < 5.0 || peak <= -90.0)
     {
-        p.why.add ("Chop Shop on this track hasn't heard the song yet: press RESET on The Master, play the song, then UPDATE.");
+        p.why.add ("Cutthroat on this track hasn't heard the song yet: press RESET on The Master, play the song, then UPDATE.");
         p.note = "NOT HEARD YET";
         return p;
     }
@@ -348,7 +348,7 @@ inline TrackPlan planTrackChop (const HelperInfo& h, const TrackInfo* t, const G
     p.why.add (kit ? "SHAPE SOFT: rounds the hits of a full kit, so cymbals don't crunch."
                    : "SHAPE HARD: a clean, flat cut keeps the crack of each hit.");
     p.why.add ("MODE MASTER, COLOR 0: transparent; nothing below the ceiling changes. OVERSAMPLING 2x keeps it clean without much CPU.");
-    p.why.add ("The Servant's compressor on this track is off: Chop Shop handles its peaks, with more punch than compressing them.");
+    p.why.add ("The Servant's compressor on this track is off: Cutthroat handles its peaks, with more punch than compressing them.");
     p.note = "CEILING " + juce::String (ceiling, 1) + " dB  //  SHAVES " + juce::String (shave, 1) + " dB  //  " + (kit ? "SOFT" : "HARD");
     return p;
 }

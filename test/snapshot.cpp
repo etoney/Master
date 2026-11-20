@@ -270,11 +270,11 @@ int main (int argc, char** argv)
 
         auto hot = ok; hot.truePeak = 0.4f; hot.clipEvents = 40;
         r = mst::advise (hot, rock);
-        check (hasItem (r, mst::Sev::fix, "TRUE PEAKS", mst::plug::dominatrix) && hasItem (r, mst::Sev::fix, "CLIPPING", mst::plug::chopShop), "over 0 dBTP + clipping -> Dominatrix CEILING and Chop Shop");
+        check (hasItem (r, mst::Sev::fix, "TRUE PEAKS", mst::plug::dominatrix) && hasItem (r, mst::Sev::fix, "CLIPPING", mst::plug::chopShop), "over 0 dBTP + clipping -> Dominatrix CEILING and Cutthroat");
 
         auto spiky = ok; spiky.plr = rock.stat (mst::fPlr).mean + 4.0f;
         r = mst::advise (spiky, rock);
-        check (hasItem (r, mst::Sev::fix, "PEAKS STICKING OUT", mst::plug::chopShop), "too dynamic -> Chop Shop");
+        check (hasItem (r, mst::Sev::fix, "PEAKS STICKING OUT", mst::plug::chopShop), "too dynamic -> Cutthroat");
 
         auto wideBass = ok; wideBass.lowCorrelation = 0.3f;
         r = mst::advise (wideBass, rock);
@@ -282,7 +282,7 @@ int main (int argc, char** argv)
 
         auto hum = ok; hum.humSeconds = 5; hum.humHz = 50; hum.humDb = 25;
         r = mst::advise (hum, rock);
-        check (hasItem (r, mst::Sev::fix, "50 Hz HUM", mst::plug::buzzKill), "hum -> BuzzKill");
+        check (hasItem (r, mst::Sev::fix, "50 Hz HUM", mst::plug::buzzKill), "hum -> Dead Air");
 
         auto swings = ok; swings.lra = rock.stat (mst::fLra).mean + 5.0f;
         r = mst::advise (swings, rock);
@@ -746,7 +746,7 @@ int main (int argc, char** argv)
         check (mst::plugDisplayName ("lowblow") == "Low Blow" && MasterProcessor::isTrackKind ("lowblow"), "Low Blow counts as a track plugin");
     }
 
-    // ---------------- BuzzKill and Flatliner on the tracks
+    // ---------------- Dead Air and Flatliner on the tracks
     {
         auto byId = [&] (const char* id) -> const mst::GenreProfile& { for (auto& g : factory.genres) if (g.id == id) return g; return factory.genres[0]; };
         const auto& metal = byId ("metal");
@@ -759,15 +759,15 @@ int main (int argc, char** argv)
         auto bmLead = mst::planBuzzKill ({ "b2", "buzzkill", "Lead Gtr", "Lead", bk.extra }, mix, metal);
         auto bp = mst::planBuzzKill (bk, mix, rockG);
         check (bm.params.at ("release") >= 0.75f && bp.params.at ("release") <= 0.5f && bmLead.params.at ("release") < bm.params.at ("release"),
-               juce::String::formatted ("BuzzKill RELEASE: tight for metal rhythm (%.2f), gentler on a metal lead (%.2f), looser for rock (%.2f)",
+               juce::String::formatted ("Dead Air RELEASE: tight for metal rhythm (%.2f), gentler on a metal lead (%.2f), looser for rock (%.2f)",
                                         bm.params.at ("release"), bmLead.params.at ("release"), bp.params.at ("release")));
-        check (bm.params.at ("listen") == 0.0f && bm.why.joinIntoString (" ").contains ("60 Hz hum"), "BuzzKill: HEAR REMOVED off, and the mix's hum is the reason");
+        check (bm.params.at ("listen") == 0.0f && bm.why.joinIntoString (" ").contains ("60 Hz hum"), "Dead Air: HEAR REMOVED off, and the mix's hum is the reason");
         auto noisy = bk; noisy.extra = ex ({ { "floorDb", -45.0 }, { "playDb", -20.0 }, { "seconds", 30.0 }, { "learned", true } });
-        check (mst::planBuzzKill (noisy, mix, rockG).params.at ("release") > bp.params.at ("release"), "BuzzKill closes sooner on a noisy track");
+        check (mst::planBuzzKill (noisy, mix, rockG).params.at ("release") > bp.params.at ("release"), "Dead Air closes sooner on a noisy track");
         auto quietGtr = bk; quietGtr.extra = ex ({ { "floorDb", -90.0 }, { "playDb", -120.0 }, { "seconds", 0.0 }, { "learned", false } });
         const auto qp = mst::planBuzzKill (quietGtr, mix, rockG);
         check (qp.note.contains ("CLEAN") && ! qp.note.contains ("NOT LEARNED") && qp.why.joinIntoString (" ").contains ("another track"),
-               "BuzzKill on a near-silent guitar: CLEAN, nothing to remove (not NOT LEARNED), and the hum is from another track");
+               "Dead Air on a near-silent guitar: CLEAN, nothing to remove (not NOT LEARNED), and the hum is from another track");
 
         mst::HelperInfo fl { "f1", "flatliner", "Lead Vox", "Lead", ex ({ { "p10", -34.0 }, { "p50", -22.0 }, { "p90", -14.0 }, { "floorDb", -70.0 }, { "seconds", 60.0 } }) };
         auto fp = mst::planFlatliner (fl, rockG);
@@ -781,18 +781,18 @@ int main (int argc, char** argv)
         check (mst::planFlatliner (steady, rockG).params.at ("range") == 3.0f, "Flatliner: a steady lead gets only a gentle ride");
         auto fresh = fl; fresh.extra = ex ({ { "seconds", 1.0 } });
         check (mst::planFlatliner (fresh, rockG).params.empty(), "Flatliner: nothing is set until it has heard the song");
-        // CHOP SHOP on a drum track, DOMINATRIX on a thin bass
+        // CUTTHROAT on a drum track, DOMINATRIX on a thin bass
         {
             mst::TrackInfo snare; snare.name = "Snare"; snare.role = "Snare"; snare.transP95 = 10.0f; snare.transSeconds = 30.0f;
             mst::HelperInfo cs { "c1", "chopshop", "Snare", "Snare", ex ({ { "track", "Snare" }, { "songPeakDb", -6.0 }, { "seconds", 30.0 } }) };
             const auto c = mst::planTrackChop (cs, &snare, byId ("rock"));
             check (std::abs (c.params.at ("ceilingDb") + 9.0f) < 0.01f && c.params.at ("shape") == 0.0f && c.params.at ("mode") == 0.0f && c.params.at ("oversample") == 1.0f,
-                   juce::String::formatted ("Chop Shop on the snare: ceiling 3 dB under its loudest hit (%.1f), HARD, MASTER mode, 2x", c.params.at ("ceilingDb")));
+                   juce::String::formatted ("Cutthroat on the snare: ceiling 3 dB under its loudest hit (%.1f), HARD, MASTER mode, 2x", c.params.at ("ceilingDb")));
             auto kitH = cs; kitH.role = "Drums";
             const auto ck = mst::planTrackChop (kitH, &snare, metal);
             check (ck.params.at ("shape") == 1.0f && ck.params.at ("ceilingDb") < c.params.at ("ceilingDb"), "a full kit gets a SOFT knee; metal shaves a little deeper");
             auto fresh = cs; fresh.extra = ex ({ { "track", "Snare" }, { "seconds", 0.0 } });
-            check (mst::planTrackChop (fresh, &snare, byId ("rock")).params.empty(), "Chop Shop: nothing is set until it has heard the song");
+            check (mst::planTrackChop (fresh, &snare, byId ("rock")).params.empty(), "Cutthroat: nothing is set until it has heard the song");
             mst::TrackPlan sv; sv.kind = "servant"; sv.role = "Snare"; sv.compOn = true;
             mst::TrackPlan gt = sv; gt.role = "Rhythm Guitar";
             check (mst::wantsDrumClip (sv) && ! mst::wantsDrumClip (gt), "a clipper is wanted on drum tracks The Master would compress for the peaks, not on guitars");
@@ -810,7 +810,7 @@ int main (int argc, char** argv)
         mst::ChainPlan cp; cp.valid = true; cp.tracks = { bm, fp };
         auto rt = mst::ChainPlan::fromVar (juce::JSON::parse (juce::JSON::toString (cp.toVar())));
         check (rt.tracks.size() == 2 && rt.tracks[0].kind == "buzzkill" && rt.tracks[1].summary() == fp.summary() && rt.tracks[1].params.at ("range") == fp.params.at ("range"),
-               "BuzzKill / Flatliner plans survive a save/load");
+               "Dead Air / Flatliner plans survive a save/load");
     }
 
     // ---------------- processor
@@ -945,7 +945,7 @@ int main (int argc, char** argv)
         p.apvts.getParameter ("headroom")->setValueNotifyingHost (1.0f);   // these checks are for a finished -1 dB master
         auto pump = [] (int ms) { juce::MessageManager::getInstance()->runDispatchLoopUntil (ms); };
 
-        // fake Dominatrix + Chop Shop living in "another plugin binary" (a separate node: real socket)
+        // fake Dominatrix + Cutthroat living in "another plugin binary" (a separate node: real socket)
         auto other = cdlink::Node::createIsolatedForTesting();
         juce::var masterEnv;
         struct Fake
@@ -1094,23 +1094,23 @@ int main (int argc, char** argv)
         {
             bool voxAdd = false, generic = false;
             for (auto& ad : cp.adds) if (ad.kind == "buzzkill") { if (ad.track == "Lead Vox" && ad.why.contains ("60 Hz hum")) voxAdd = true; if (ad.track.isEmpty()) generic = true; }
-            check (voxAdd && ! generic, "the Servants say where the hum is: BuzzKill asked for on Lead Vox only, not on every guitar and bass track");
+            check (voxAdd && ! generic, "the Servants say where the hum is: Dead Air asked for on Lead Vox only, not on every guitar and bass track");
         }
         check (cp.step ("dominatrix")->params.at ("outputDb") > 3.0f && cp.step ("dominatrix")->params.at ("ceiling") == 0.0f, "Dominatrix: OUTPUT drives into the -1 dB ceiling");
-        check (cp.step ("chopshop")->params.at ("ceilingDb") < cp.before.samplePeak - 1.0f && cp.step ("chopshop")->params.at ("shape") == 1.0f, "Chop Shop: soft ceiling under the loudest peaks");
+        check (cp.step ("chopshop")->params.at ("ceilingDb") < cp.before.samplePeak - 1.0f && cp.step ("chopshop")->params.at ("shape") == 1.0f, "Cutthroat: soft ceiling under the loudest peaks");
         bool allWhy = ! cp.changes.empty(); for (auto& c : cp.changes) allWhy = allWhy && c.why.isNotEmpty();
         check (allWhy, juce::String::formatted ("every planned change has a reason (%d changes)", (int) cp.changes.size()));
         int nServ = 0; const mst::TrackPlan *bkPlan = nullptr, *flPlan = nullptr;
         for (auto& t : cp.tracks) { if (t.kind == "servant") ++nServ; if (t.kind == "buzzkill") bkPlan = &t; if (t.kind == "flatliner") flPlan = &t; }
         check (nServ == 2, juce::String::formatted ("the prescription includes the 2 linked Servants (%d)", nServ));
-        check (bkPlan != nullptr && bkPlan->name == "Rhythm Gtr" && bkPlan->role == "Rhythm" && bkPlan->params.count ("release"), "BuzzKill planned, on the rhythm guitar's track (by name)");
+        check (bkPlan != nullptr && bkPlan->name == "Rhythm Gtr" && bkPlan->role == "Rhythm" && bkPlan->params.count ("release"), "Dead Air planned, on the rhythm guitar's track (by name)");
         check (flPlan != nullptr && flPlan->name == "Lead Vox" && flPlan->role == "Lead" && std::abs (flPlan->params.at ("target") + 21.0f) < 0.01f,
                "Flatliner planned, on the lead vocal's track (found by its level fingerprint)");
-        bool genericBuzz = false; for (auto& o : cp.onTracks) if (o.startsWith ("BUZZKILL") || o.startsWith ("FLATLINER")) genericBuzz = true;
-        check (! genericBuzz, "no 'put BuzzKill / Flatliner on' advice when they're already linked");
+        bool genericBuzz = false; for (auto& o : cp.onTracks) if (o.startsWith ("DEAD AIR") || o.startsWith ("FLATLINER")) genericBuzz = true;
+        check (! genericBuzz, "no 'put Dead Air / Flatliner on' advice when they're already linked");
         bool voxJumpComp = false; for (auto& t : cp.tracks) if (t.name == "Lead Vox" && t.kind == "servant") for (auto& w : t.why) if (w.contains ("jumps")) voxJumpComp = true;
         check (! voxJumpComp, "the lead a Flatliner rides doesn't also get The Servant's compressor for its jumps");
-        check (p.applyChain().contains ("Chop Shop") , "APPLY says which plugins are missing");
+        check (p.applyChain().contains ("Cutthroat") , "APPLY says which plugins are missing");
 
         // 2) the plugins appear (and keep reporting 4x a second, like the real ones);
         //    play in real time so The Master can check the order
@@ -1119,8 +1119,8 @@ int main (int argc, char** argv)
         {
             if (! watcherEnv.isObject()) return;
             sendStatus (dom, envWith (watcherEnv, "wobble", "same"));     // Dominatrix's output = The Master's input
-            sendStatus (chop, envWith (watcherEnv, "spiky", "wobble"));   // Chop Shop's output = Dominatrix's input
-            if (hasFreak) sendStatus (frk, envWith (watcherEnv, "zig", "spiky"));   // The Freak's output = Chop Shop's input
+            sendStatus (chop, envWith (watcherEnv, "spiky", "wobble"));   // Cutthroat's output = Dominatrix's input
+            if (hasFreak) sendStatus (frk, envWith (watcherEnv, "zig", "spiky"));   // The Freak's output = Cutthroat's input
         };
         pinger.startTimer (250);
         p.setNonRealtime (false);
@@ -1152,9 +1152,9 @@ int main (int argc, char** argv)
                "APPLY turns the de-esser on for the hissy lead vocal only");
         check (bkz.sets == 1 && bkz.params["listen"] == 0.0 && std::abs (bkz.params["release"] - bkPlan->params.at ("release")) < 0.01
                && flt.sets == 1 && std::abs (flt.params["range"] - flPlan->params.at ("range")) < 0.01,
-               "BuzzKill and Flatliner received their settings");
+               "Dead Air and Flatliner received their settings");
         check (dom.sets == 1 && std::abs (dom.params["outputDb"] - cp.step ("dominatrix")->params.at ("outputDb")) < 0.01 && chop.sets == 1
-               && std::abs (chop.params["ceilingDb"] - cp.step ("chopshop")->params.at ("ceilingDb")) < 0.01, "Dominatrix and Chop Shop received their settings");
+               && std::abs (chop.params["ceilingDb"] - cp.step ("chopshop")->params.at ("ceilingDb")) < 0.01, "Dominatrix and Cutthroat received their settings");
         if (hasFreak)
             check (frk.sets == 1 && std::abs (frk.params["b1d"] - cp.step ("freak")->params.at ("b1d")) < 0.01 && frk.params.count ("b6on") && freakNotes == 1 && freakNote0.isNotEmpty(),
                    "The Freak received its bands and the reason for each (" + freakNote0 + ")");
@@ -1164,7 +1164,7 @@ int main (int argc, char** argv)
         {
             if (e.plugin != "The Master") { confirmed = confirmed && e.confirmed; ++n; }
             if (e.plugin == "The Servant") ++servantEntries;
-            if ((e.plugin == "BuzzKill" || e.plugin == "Flatliner") && e.detail.isNotEmpty()) ++helperEntries;
+            if ((e.plugin == "Dead Air" || e.plugin == "Flatliner") && e.detail.isNotEmpty()) ++helperEntries;
         }
         check (servantEntries == 2 && helperEntries == 2, "the log has an entry per track plugin, each with its reasons");
         check (n > 5 && confirmed, juce::String::formatted ("the log explains every change and shows both plugins confirmed (%d entries)", n));
@@ -1194,14 +1194,14 @@ int main (int argc, char** argv)
         bk2Pinger.startTimer (250);
         for (int i = 0; i < 20 && ! p.chainOutdated(); ++i) pump (50);
         pme->refreshNow();
-        check (p.chainOutdated() && pme->mainButtonText() == "UPDATE", "a BuzzKill added after APPLY: the main button says UPDATE (" + pme->mainButtonText() + ")");
+        check (p.chainOutdated() && pme->mainButtonText() == "UPDATE", "a Dead Air added after APPLY: the main button says UPDATE (" + pme->mainButtonText() + ")");
         pme->pressAutoFix();
         for (int i = 0; i < 80 && bk2.sets == 0; ++i) pump (50);
         pme->refreshNow();
         check (p.getChainStage() == 2 && ! p.chainOutdated() && bk2.sets == 1 && pme->mainButtonText() == "REFINE",
-               "UPDATE plans the new BuzzKill in from the same analysis, sends its settings, and stays applied");
+               "UPDATE plans the new Dead Air in from the same analysis, sends its settings, and stays applied");
 
-        // 3c) a Chop Shop on a track (its DAW track name matches a Servant) is a track plugin, not the bus one
+        // 3c) a Cutthroat on a track (its DAW track name matches a Servant) is a track plugin, not the bus one
         Fake chop2 { "chopshop", { { "ceilingDb", 0 }, { "mode", 0 }, { "shape", 0 } } };
         chop2.ep = std::make_unique<cdlink::Endpoint> ("chopshop", [&chop2] (const juce::var& m)
         {
@@ -1224,16 +1224,16 @@ int main (int argc, char** argv)
             bool busChopStill = false;
             for (auto& st : p.chainStatus()) if (st.kind == "chopshop") busChopStill = st.linked && st.peerId != chop2Id;
             check (chop2Id.isNotEmpty() && p.isTrackPeer (chop2Id) && busChopStill && p.chainOutdated(),
-                   "a Chop Shop on a track is a track plugin: the bus Chop Shop stays the bus one, and the main button says UPDATE");
+                   "a Cutthroat on a track is a track plugin: the bus Cutthroat stays the bus one, and the main button says UPDATE");
             pme->refreshNow();
             pme->pressAutoFix();
             for (int i = 0; i < 80 && chop2.sets == 0; ++i) pump (50);
             const mst::TrackPlan* tc = nullptr;
             for (auto& t : p.getChainPlan().tracks) if (t.kind == "chopshop") tc = &t;
             bool rebelNote = false; for (auto& o : p.getChainPlan().onTracks) if (o.startsWith ("REBEL") && o.contains ("Rhythm Gtr")) rebelNote = true;
-            // nobody asked for a Chop Shop on the guitar: it's yours, so REBEL goes on and nothing else is sent
+            // nobody asked for a Cutthroat on the guitar: it's yours, so REBEL goes on and nothing else is sent
             check (tc != nullptr && tc->rebel && chop2.params["rebel"] > 0.5 && chop2.params["ceilingDb"] == 0.0 && rebelNote,
-                   "a Chop Shop The Master didn't ask for: it switches its REBEL on, says so, and leaves its settings alone");
+                   "a Cutthroat The Master didn't ask for: it switches its REBEL on, says so, and leaves its settings alone");
             pump (600);
             const int setsRebel = chop2.sets;
             pme->refreshNow(); pme->pressAutoFix();
@@ -1248,7 +1248,7 @@ int main (int argc, char** argv)
             for (auto& t : p.getChainPlan().tracks) if (t.kind == "chopshop") tc = &t;
             check (tc != nullptr && ! tc->rebel && tc->name == "Rhythm Gtr" && chop2.params["rebel"] < 0.5 && tc->params.count ("ceilingDb")
                    && std::abs (chop2.params["ceilingDb"] - tc->params.at ("ceilingDb")) < 0.01,
-                   juce::String::formatted ("REBEL off: UPDATE plans the track Chop Shop and sends it its ceiling (%.1f dB), and leaves REBEL off", chop2.params["ceilingDb"]));
+                   juce::String::formatted ("REBEL off: UPDATE plans the track Cutthroat and sends it its ceiling (%.1f dB), and leaves REBEL off", chop2.params["ceilingDb"]));
         }
 
         {
@@ -1325,7 +1325,7 @@ int main (int argc, char** argv)
             check (p.getChainStage() == 0 && ! p.getChainPlan().valid && ! p.isFixOn(), "START OVER clears the prescription and turns The Master's own fix off");
             check (std::abs (dom.params["outputDb"]) < 0.01 && std::abs (dom.params["ceiling"] - 2.0) < 0.01 && std::abs (dom.params["discipline"]) < 0.01
                    && std::abs (chop.params["mix"]) < 0.01 && std::abs (gtr.params["toneOn"]) < 0.01 && std::abs (gtr.params["compOn"]) < 0.01,
-                   juce::String::formatted ("START OVER puts Dominatrix, Chop Shop and The Servants back to pass-through (dom out %.1f ceil %.1f disc %.1f, chop mix %.1f, gtr tone %.1f comp %.1f)",
+                   juce::String::formatted ("START OVER puts Dominatrix, Cutthroat and The Servants back to pass-through (dom out %.1f ceil %.1f disc %.1f, chop mix %.1f, gtr tone %.1f comp %.1f)",
                                             dom.params["outputDb"], dom.params["ceiling"], dom.params["discipline"], chop.params["mix"], gtr.params["toneOn"], gtr.params["compOn"]));
             // a fresh prescription through a Dominatrix still turned up refuses, and starts over by itself
             p.setNonRealtime (true);
@@ -1438,14 +1438,14 @@ int main (int argc, char** argv)
         { MasterProcessor::TrackStatus t; t.kind = kind; t.name = name; t.role = role; t.linked = linked; t.planned = true; t.summary = "EQ 3 bands"; cv.tracks.push_back (t); };
         tr ("servant", "Lead Vox", "Lead"); tr ("servant", "Rhythm Gtr L", "Rhythm"); tr ("servant", "Rhythm Gtr R", "Rhythm");
         tr ("servant", "Bass", "Bass"); tr ("servant", "Kick", "Kick"); tr ("servant", "Snare", "Snare"); tr ("servant", "Overheads", "Drums");
-        tr ("servant", "Keys", "Keys / Pads"); tr ("buzzkill", "Rhythm Gtr L", "BUZZKILL"); tr ("buzzkill", "Bass", "BUZZKILL");
+        tr ("servant", "Keys", "Keys / Pads"); tr ("buzzkill", "Rhythm Gtr L", "DEAD AIR"); tr ("buzzkill", "Bass", "DEAD AIR");
         std::vector<mst::ChainPlan::TrackAdd> adds { { "flatliner", "Lead Vox", "Its level swings 14 dB." }, { "lowblow", "Bass", "It and Kick fight in BASS." } };
         cv.rebuildTracks (adds);
         auto* vp = dynamic_cast<juce::Viewport*> (cv.getChildComponent (0));
         auto* list = vp != nullptr ? vp->getViewedComponent() : nullptr;
         check (vp != nullptr && vp->isVisible() && list != nullptr && list->getHeight() > vp->getHeight(),
                "YOUR TRACKS: 8 tracks don't fit, so the list scrolls (no '+ more, see the log')");
-        check (list != nullptr && list->getHeight() == 9 * TrackChainList::rowH, "YOUR TRACKS: one row per track (BuzzKill and Servant share a row) + the Servant reminder");
+        check (list != nullptr && list->getHeight() == 9 * TrackChainList::rowH, "YOUR TRACKS: one row per track (Dead Air and Servant share a row) + the Servant reminder");
         juce::Image img (juce::Image::ARGB, 772 * 2, 198 * 2, true);
         { juce::Graphics g (img); g.addTransform (juce::AffineTransform::scale (2.0f)); g.fillAll (juce::Colour (0xff1d1815)); cv.paintEntireComponent (g, true); }
         check (writePng (img, dir.getChildFile ("your_tracks_scroll.png")), "YOUR TRACKS snapshot");

@@ -27,9 +27,9 @@ struct Report
 namespace plug
 {
 inline const char* dominatrix = "DOMINATRIX";
-inline const char* chopShop   = "CHOP SHOP";
+inline const char* chopShop   = "CUTTHROAT";
 inline const char* flatliner  = "FLATLINER";
-inline const char* buzzKill   = "BUZZKILL";
+inline const char* buzzKill   = "DEAD AIR";
 }
 
 inline juce::String fmt1 (float v) { return juce::String (v, 1); }
@@ -103,7 +103,7 @@ inline void bandAdvice (int b, bool hot, const juce::String& genre, const juce::
             s.title = hot ? "TOO MUCH AIR" : "NO AIR";
             s.body = hot ? "12-20 kHz is high. If the quiet parts also hiss, it may be noise rather than air."
                          : juce::String ("12-20 kHz is low, which can sound closed-in. Try a high shelf at 12-16 kHz.");
-            if (hot) { s.plugin = plug::buzzKill; s.tip = "If it's amp hiss, put BuzzKill on the guitar tracks."; }
+            if (hot) { s.plugin = plug::buzzKill; s.tip = "If it's amp hiss, put Dead Air on the guitar tracks."; }
             break;
     }
 }
@@ -150,7 +150,7 @@ inline Report advise (const Features& x, const GenreProfile& g, bool headroom = 
             add (sevFor (z), "LOUDNESS", "QUIETER THAN " + G.toUpperCase(),
                  "Integrated loudness is " + fmt1 (x.lufs) + " LUFS. " + G + " masters usually sit at " + rangeOf (st, 1, " LUFS")
                      + ", so you're about " + fmt1 (-d) + " dB short. Get there with glue and clipping, not just a harder limiter.",
-                 plug::dominatrix, "Set CEILING to -1 dB and push OUTPUT into the clipper about " + fmt1 (-d) + " dB. For more, put Chop Shop in MASTER mode before it.", std::abs (z));
+                 plug::dominatrix, "Set CEILING to -1 dB and push OUTPUT into the clipper about " + fmt1 (-d) + " dB. For more, put Cutthroat in MASTER mode before it.", std::abs (z));
         else if (z >= 1.5f)
             add (sevFor (z), "LOUDNESS", "LOUDER THAN " + G.toUpperCase(),
                  "Integrated loudness is " + fmt1 (x.lufs) + " LUFS, hotter than " + G + " usually goes (" + rangeOf (st, 1, " LUFS")
@@ -187,7 +187,7 @@ inline Report advise (const Features& x, const GenreProfile& g, bool headroom = 
         penalty += juce::jmin (15.0f, 3.0f + (float) x.clipEvents * 0.2f);
         add (x.clipEvents >= 20 ? Sev::fix : Sev::check, "PEAKS", "DIGITAL CLIPPING",
              juce::String (x.clipEvents) + " spots where the waveform flat-tops at full scale. That's hard digital clipping before The Master, usually a mix bus or limiter running into 0 dBFS. Pull the master fader down 1-2 dB.",
-             plug::chopShop, "If you want the clipping, do it on purpose: Chop Shop in MASTER mode with SOFT clipping sounds far cleaner.", (float) x.clipEvents);
+             plug::chopShop, "If you want the clipping, do it on purpose: Cutthroat in MASTER mode with SOFT clipping sounds far cleaner.", (float) x.clipEvents);
     }
 
     // ---- dynamics (PLR)
@@ -301,7 +301,7 @@ inline Report advise (const Features& x, const GenreProfile& g, bool headroom = 
         add (x.humSeconds >= 3.0f ? Sev::fix : Sev::check, "NOISE", juce::String (x.humHz) + " Hz HUM IN THE QUIET PARTS",
              "Mains hum (" + juce::String (x.humHz) + " Hz plus harmonics, " + fmt1 (x.humDb) + " dB above the noise) shows up in "
                  + juce::String ((int) x.humSeconds) + " s of the gaps, count-ins or ending. Usually it's a guitar amp or a bass DI.",
-             plug::buzzKill, "Put BuzzKill on the guitar and bass tracks, not the master. It removes the hum and keeps the sustain.", 4.0f);
+             plug::buzzKill, "Put Dead Air on the guitar and bass tracks, not the master. It removes the hum and keeps the sustain.", 4.0f);
     }
 
     r.score = juce::jlimit (0, 100, (int) std::lround (100.0f - penalty));

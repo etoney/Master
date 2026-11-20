@@ -568,7 +568,7 @@ std::vector<juce::String> MasterProcessor::detectChain() const
         juce::String best; float bestD = 0.6f;
         for (auto& [id, p] : peers)
         {
-            if (used.count (id) || ! p.env.isObject() || isTrackPeer (id)) continue;   // Servants, BuzzKill, Flatliner sit on tracks, not on the bus
+            if (used.count (id) || ! p.env.isObject() || isTrackPeer (id)) continue;   // Servants, Dead Air, Flatliner sit on tracks, not on the bus
             int shared = 0;
             const float d = cdlink::envDistance (p.env, "out", cur, curKey, shared);
             if (shared >= 12 && d < bestD) { bestD = d; best = id; }
@@ -766,7 +766,7 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
         for (int k = (int) tracks.size(); --k >= 0;)
             if (busNames.contains (tracks[(size_t) k].name)) tracks.erase (tracks.begin() + k);
     }
-    // BuzzKill and Flatliner on the tracks: which track each one is on (its Servant), what it heard
+    // Dead Air and Flatliner on the tracks: which track each one is on (its Servant), what it heard
     std::vector<mst::HelperInfo> helpers;
     std::set<juce::String> ridden;
     for (auto& [id, p] : peers)
@@ -819,7 +819,7 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
     {
         auto trackInfo = [&] () -> const mst::TrackInfo* { for (auto& t : tracks) if (t.name.equalsIgnoreCase (h.track)) return &t; return nullptr; };
         bool rebel = isRebel (h.id);
-        // a Chop Shop or Dominatrix on a track that The Master didn't ask for is yours: it switches
+        // a Cutthroat or Dominatrix on a track that The Master didn't ask for is yours: it switches
         // REBEL on for it, once (turn REBEL off and The Master runs it from then on)
         if (! rebel && (h.kind == "chopshop" || h.kind == "dominatrix"))
         {
@@ -862,7 +862,7 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
                 {
                     sv.compOn = false; sv.comp = 0; sv.params["compOn"] = 0.0f;
                     for (int w = sv.why.size(); --w >= 0;) if (sv.why[w].startsWith ("COMP")) sv.why.remove (w);
-                    sv.why.add ("COMP off: Chop Shop on this track shaves its peaks instead (more punch than compressing them).");
+                    sv.why.add ("COMP off: Cutthroat on this track shaves its peaks instead (more punch than compressing them).");
                 }
         }
         else if (h.kind == "dominatrix") chainPlan.tracks.push_back (mst::planTrackDom (h, trackInfo(), G));
@@ -878,10 +878,10 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
     // the advice for the tracks: what's linked now does the job; ask for what's missing
     for (int i = chainPlan.onTracks.size(); --i >= 0;)
     {
-        if (anyBuzz && chainPlan.onTracks[i].startsWith ("BUZZKILL")) { chainPlan.onTracks.remove (i); chainPlan.removeAdds ("buzzkill"); }
+        if (anyBuzz && chainPlan.onTracks[i].startsWith ("DEAD AIR")) { chainPlan.onTracks.remove (i); chainPlan.removeAdds ("buzzkill"); }
     }
     if (anyBuzz) chainPlan.removeAdds ("buzzkill");
-    // THE SERVANTS' EARS: each one checks its own track's quiet parts for hum and noise, so BuzzKill goes
+    // THE SERVANTS' EARS: each one checks its own track's quiet parts for hum and noise, so Dead Air goes
     // on exactly the tracks that need it. (The Master hears the hum in the mix; the Servants say where from.)
     struct Heard { juce::String name; int hz = 0; float db = 0, floorDb = -120; int sec = 0; };
     std::vector<Heard> humTracks, cleanTracks;
@@ -910,9 +910,9 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
                               + " s, " + juce::String (h->db, 0) + " dB over the noise around it): this is a track to clean.");
         else if (auto* c = findIn (cleanTracks, t.name); c != nullptr && t.note.contains ("NOT LEARNED"))
         {
-            for (int w = t.why.size(); --w >= 0;) if (t.why[w].startsWith ("BuzzKill hasn't heard") || t.why[w].startsWith ("The mix has")) t.why.remove (w);
+            for (int w = t.why.size(); --w >= 0;) if (t.why[w].startsWith ("Dead Air hasn't heard") || t.why[w].startsWith ("The mix has")) t.why.remove (w);
             t.why.insert (1, "CLEAN: The Servant on this track hears no hum, and its noise sits at " + juce::String (c->floorDb, 0)
-                              + " dBFS, far too quiet to hear. BuzzKill has nothing to remove here.");
+                              + " dBFS, far too quiet to hear. Dead Air has nothing to remove here.");
             t.note = t.note.upToFirstOccurrenceOf ("  //", false, false) + "  //  CLEAN, NOTHING TO REMOVE";
         }
     }
@@ -922,13 +922,13 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
         for (auto& h : humTracks)
             if (! hasOnTrack ("buzzkill", h.name))
                 chainPlan.adds.push_back ({ "buzzkill", h.name, "The Servant on this track hears " + juce::String (h.hz) + " Hz hum in its quiet parts ("
-                                            + juce::String (h.sec) + " s). Put BuzzKill first on the track (right after the amp sim or DI), then press UPDATE." });
+                                            + juce::String (h.sec) + " s). Put Dead Air first on the track (right after the amp sim or DI), then press UPDATE." });
         if (humTracks.empty() && in.humSeconds >= 1.0f)
             chainPlan.adds.push_back ({ "servant", "The track with the hum", juce::String (in.humHz) + " Hz hum in the mix, but none of your Servants hears it on its own track: "
-                                        "it's on a track without The Servant (or on a bus). Put The Servant there, play the song, and The Master will point BuzzKill at it." });
+                                        "it's on a track without The Servant (or on a bus). Put The Servant there, play the song, and The Master will point Dead Air at it." });
     }
     else if (in.humSeconds >= 1.0f && anyBuzz)
-    {   // older Servants (no noise report): if every BuzzKill sits on a clean track, point at the others, the bass first
+    {   // older Servants (no noise report): if every Dead Air sits on a clean track, point at the others, the bass first
         bool anyNoisy = false;
         for (auto& h : helpers) if (h.kind == "buzzkill" && ! mst::buzzKillClean (h.extra)) anyNoisy = true;
         if (! anyNoisy)
@@ -942,8 +942,8 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
             }
             std::sort (want.begin(), want.end());
             for (auto& [rank, name] : want)
-                chainPlan.adds.push_back ({ "buzzkill", name, juce::String (in.humHz) + " Hz hum in the mix's quiet parts, and the BuzzKills you have are on clean tracks. "
-                                            + juce::String (rank == 0 ? "A bass DI is the usual source: " : "") + "put BuzzKill first on this track, then press UPDATE." });
+                chainPlan.adds.push_back ({ "buzzkill", name, juce::String (in.humHz) + " Hz hum in the mix's quiet parts, and the Dead Air plugins you have are on clean tracks. "
+                                            + juce::String (rank == 0 ? "A bass DI is the usual source: " : "") + "put Dead Air first on this track, then press UPDATE." });
         }
     }
     // drum tracks that make the mix's peaks: a clipper on the track beats compressing them
@@ -954,7 +954,7 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
     };
     for (auto& sv : chainPlan.tracks)
         if (mst::wantsDrumClip (sv) && ! hasOn ("chopshop", sv.name))
-            chainPlan.adds.push_back ({ "chopshop", sv.name, "Its hits make the mix's peaks. Chop Shop shaves them at the source with more punch than "
+            chainPlan.adds.push_back ({ "chopshop", sv.name, "Its hits make the mix's peaks. Cutthroat shaves them at the source with more punch than "
                                         "compressing them (The Servant's compressor does the job until you add it). Put it after The Servant, then press UPDATE." });
     // a bass that's thin on small speakers: Dominatrix's saturation gives it harmonics
     for (auto& t : tracks)
@@ -1027,7 +1027,7 @@ juce::String MasterProcessor::applyChain()
                 if (c.hasFrom) c.from = (float) (double) peer.params.getProperty (c.param, 0.0);
             }
     }
-    // The Servants, BuzzKills and Flatliners on the tracks
+    // The Servants, Dead Air plugins and Flatliners on the tracks
     int tracksSet = 0;
     for (auto& t : chainPlan.tracks)
     {
@@ -1132,7 +1132,7 @@ juce::String MasterProcessor::refineChain()
         {
             // -6 dB mode: peaks just under -6 dBFS, and no squashing (the mastering engineer gets the dynamics)
             // squashed is judged against the genre, not against your mix: when your peaks stuck out, the
-            // prescription is meant to bring them in (Chop Shop, the drums' ATTACK), so a smaller PLR is the point
+            // prescription is meant to bring them in (Cutthroat, the drums' ATTACK), so a smaller PLR is the point
             const auto& sp = g.stat (mst::fPlr);
             const float floorPlr = sp.mean - sp.sd;
             want = 0.0f;
@@ -1163,7 +1163,7 @@ juce::String MasterProcessor::refineChain()
         const float cur = (float) (double) peers.at (chop).params.getProperty ("ceilingDb", 0.0);
         const float next = juce::jmax (-24.0f, cur - 1.0f);
         sendSet (chop, { { "ceilingDb", next } }, "The Master: refine peaks");
-        added.push_back ({ "Chop Shop", "CEILING  " + juce::String (cur, 1) + " > " + juce::String (next, 1) + " dB",
+        added.push_back ({ "Cutthroat", "CEILING  " + juce::String (cur, 1) + " > " + juce::String (next, 1) + " dB",
                            "Peaks still stick out " + juce::String (after.plr, 1) + " dB over the average after the chain; shaving another dB." });
     }
     if (added.empty()) added.push_back ({ "The Master", "NOTHING TO REFINE", "Loudness, peaks and low end landed where " + g.name + " records sit." });

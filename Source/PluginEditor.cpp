@@ -459,8 +459,8 @@ void StepBar::paint (juce::Graphics& g)
 //==============================================================================
 static int plugOrder (const juce::String& kind)
 {
-    // BuzzKill right after the amp sim, Flatliner before the levelling, The Servant, then Dominatrix's
-    // saturation (bass) or Chop Shop's clip (drums), and Low Blow's duck last
+    // Dead Air right after the amp sim, Flatliner before the levelling, The Servant, then Dominatrix's
+    // saturation (bass) or Cutthroat's clip (drums), and Low Blow's duck last
     if (kind == "buzzkill") return 0;
     if (kind == "flatliner") return 1;
     if (kind == "servant") return 2;
@@ -1863,7 +1863,7 @@ void MasterEditor::timerCallback()
             chainView.tracks = proc.trackStatus();
             chainView.onTracks.clear();
             for (auto& l : cp.onTracks)   // per-track plugins now live in YOUR TRACKS; keep only general notes here
-                if (! (l.startsWith ("BUZZKILL") || l.startsWith ("FLATLINER") || l.startsWith ("LOW BLOW") || l.startsWith ("THE SERVANT")))
+                if (! (l.startsWith ("DEAD AIR") || l.startsWith ("FLATLINER") || l.startsWith ("LOW BLOW") || l.startsWith ("THE SERVANT")))
                     chainView.onTracks.add (l);
             chainView.stage = proc.getChainStage();
             chainView.rebuildTracks (proc.getChainStage() >= 1 ? cp.adds : std::vector<mst::ChainPlan::TrackAdd>());

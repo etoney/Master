@@ -154,7 +154,7 @@ inline FixPlan planFixes (const Features& in, const Features* after, float curre
     // ---- hum
     p.humOn = in.humSeconds >= 1.0f && in.humHz > 0;
     p.humHz = in.humHz > 0 ? in.humHz : 60;
-    plan.whyHum = p.humOn ? "Notches out " + juce::String (in.humHz) + " Hz hum and 2 harmonics. BuzzKill on the guitar/bass tracks does it better, without touching the bass notes."
+    plan.whyHum = p.humOn ? "Notches out " + juce::String (in.humHz) + " Hz hum and 2 harmonics. Dead Air on the guitar/bass tracks does it better, without touching the bass notes."
                           : "No hum found.";
 
     // ---- loudness + ceiling

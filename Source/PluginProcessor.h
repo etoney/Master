@@ -118,9 +118,9 @@ public:
     };
     struct LogEntry { juce::String plugin, title, detail; bool confirmed = false; juce::String peerId; };
     struct TrackStatus { juce::String peerId, kind { "servant" }, name, role, summary; float share = -1; bool linked = false, planned = false; };
-    std::vector<TrackStatus> trackStatus() const;   // linked Servants, BuzzKills and Flatliners + what the prescription does to each
+    std::vector<TrackStatus> trackStatus() const;   // linked Servants, Dead Air plugins and Flatliners + what the prescription does to each
     static bool isTrackKind (const juce::String& k) { return k == "servant" || k == "buzzkill" || k == "flatliner" || k == "lowblow"; }
-    // a plugin sitting on a track: the track-only kinds, plus a Chop Shop or Dominatrix whose DAW track
+    // a plugin sitting on a track: the track-only kinds, plus a Cutthroat or Dominatrix whose DAW track
     // name matches a Servant's track (on a drum track / the bass), as opposed to the master bus
     bool isTrackPeer (const juce::String& id) const;
     bool isRebel (const juce::String& id) const;   // REBEL on: The Master hands off
