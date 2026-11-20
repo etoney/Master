@@ -163,6 +163,14 @@ inline std::vector<BusFound> findBuses (const std::vector<TrackInfo>& tracks)
         }
         if (toneOk) out.push_back ({ c, carries });
     }
+    // Two tracks can't carry each other: doubled parts (three takes of the same riff) fit each other's
+    // level and tone closely, so each looks like a bus of the others. Then none of them is a bus.
+    std::set<size_t> drop;
+    for (auto& a : out)
+        for (auto& b : out)
+            if (a.index != b.index && a.carries.contains (tracks[b.index].name) && b.carries.contains (tracks[a.index].name))
+            { drop.insert (a.index); drop.insert (b.index); }
+    out.erase (std::remove_if (out.begin(), out.end(), [&] (const BusFound& f) { return drop.count (f.index) > 0; }), out.end());
     return out;
 }
 

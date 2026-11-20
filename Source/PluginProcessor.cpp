@@ -543,7 +543,10 @@ std::vector<MasterProcessor::TrackStatus> MasterProcessor::trackStatus() const
         s.name = p.extra.getProperty ("track", "").toString();
         if (s.name.isEmpty()) s.name = "(track name not given by the DAW)";
         s.role = p.kind == "servant" ? p.extra.getProperty ("role", "Other").toString() : mst::plugDisplayName (p.kind).toUpperCase();
-        s.summary = chainStage >= 1 ? "linked: press UPDATE to include it" : "linked";
+        if (chainStage < 1) s.summary = "linked";
+        else if (chainPlan.leftOut.contains (id)) s.summary = "on a bus: take it off (see NOTES)";
+        else if (p.kind == "servant" && (double) p.extra.getProperty ("seconds", 0.0) < 1.0) s.summary = "silent so far: play the song, then UPDATE";
+        else s.summary = "linked: press UPDATE to include it";
         out.push_back (s);
     }
     return out;
@@ -764,7 +767,7 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
                           "so it would count them twice. A bus only gets Flatliner (on a vocal bus) from the Mix System.");
         }
         for (int k = (int) tracks.size(); --k >= 0;)
-            if (busNames.contains (tracks[(size_t) k].name)) tracks.erase (tracks.begin() + k);
+            if (busNames.contains (tracks[(size_t) k].name)) { chainPlan.leftOut.addIfNotAlreadyThere (tracks[(size_t) k].id); tracks.erase (tracks.begin() + k); }
     }
     // Dead Air and Flatliner on the tracks: which track each one is on (its Servant), what it heard
     std::vector<mst::HelperInfo> helpers;
@@ -780,6 +783,7 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
             busNotes.add (juce::String (mst::plugDisplayName (p.kind)) + " is on " + h.track + ", a bus. Take it off: "
                           + (p.kind == "lowblow" ? "Low Blow goes on the bass track only, with the kick on its sidechain."
                                                  : "it goes on the track itself, after that track's Servant."));
+            chainPlan.leftOut.addIfNotAlreadyThere (id);
             continue;
         }
         const auto sv = servantOnSameTrack (p);
@@ -1100,7 +1104,7 @@ void MasterProcessor::outputTargetChanged()
         if (target.index >= 0 && target.index < (int) genres.size())
         {
             auto fresh = mst::planChain (chainPlan.before, genres[(size_t) target.index], hr);
-            fresh.tracks = chainPlan.tracks; fresh.tracksNote = chainPlan.tracksNote; fresh.onTracks = chainPlan.onTracks; fresh.adds = chainPlan.adds;
+            fresh.tracks = chainPlan.tracks; fresh.tracksNote = chainPlan.tracksNote; fresh.leftOut = chainPlan.leftOut; fresh.onTracks = chainPlan.onTracks; fresh.adds = chainPlan.adds;
             fresh.masterFix.eq = chainPlan.masterFix.eq; fresh.masterFix.eqOn = chainPlan.masterFix.eqOn; fresh.masterEq = chainPlan.masterEq;
             fresh.changes.erase (std::remove_if (fresh.changes.begin(), fresh.changes.end(), [] (const mst::ChainChange& c) { return c.plugin == "master" && c.param == "eq"; }), fresh.changes.end());
             for (auto& c : chainPlan.changes) if (c.plugin == "master" && c.param == "eq") fresh.changes.push_back (c);
@@ -1232,6 +1236,7 @@ bool MasterProcessor::chainOutdated() const
     for (auto& [id, p] : peers)
     {
         if (! isTrackPeer (id) || planned.count (id)) continue;
+        if (chainPlan.leftOut.contains (id)) continue;   // left out on purpose (on a bus): UPDATE wouldn't change that
         // a Servant added later can only be planned once it has heard its track
         if (p.kind == "servant" && (double) p.extra.getProperty ("seconds", 0.0) < 1.0) continue;
         return true;

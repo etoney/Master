@@ -45,6 +45,7 @@ struct ChainPlan
     Features before;                          // what the plan was made from
     std::vector<TrackPlan> tracks;            // The Servant on each linked track, then Dead Air / Flatliner
     juce::String tracksNote;
+    juce::StringArray leftOut;                // linked plugins the plan leaves out on purpose (on a bus): UPDATE can't add them
 
     const ChainStep* step (const juce::String& kind) const
     {
@@ -111,6 +112,7 @@ struct ChainPlan
         }
         o->setProperty ("tracks", tr);
         o->setProperty ("tracksNote", tracksNote);
+        o->setProperty ("leftOut", leftOut.joinIntoString ("\n"));
         return juce::var (o);
     }
 
@@ -169,6 +171,7 @@ struct ChainPlan
                 c.tracks.push_back (t);
             }
         c.tracksNote = v.getProperty ("tracksNote", "").toString();
+        c.leftOut = juce::StringArray::fromLines (v.getProperty ("leftOut", "").toString()); c.leftOut.removeEmptyStrings();
         return c;
     }
 };

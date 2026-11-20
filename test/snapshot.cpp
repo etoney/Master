@@ -553,6 +553,26 @@ int main (int argc, char** argv)
                 check (found.size() == 1 && withBus[found[0].index].name == "Drums" && found[0].carries.contains ("Snare") && found[0].carries.contains ("01_Kick"),
                        juce::String::formatted ("a Servant on the drum bus is found as a bus (%d found)", (int) found.size()));
                 check (mst::findBuses (tr).empty(), "ordinary tracks aren't taken for buses");
+                // three takes of the same riff (C, L, R, from a real session): each fits the other two, but none of them is a bus
+                auto dbl = tr;
+                {
+                    const double C[10] = { 6.47e-6, 6.48e-5, 2.48e-4, 5.01e-4, 8.02e-4, 5.51e-4, 2.15e-4, 4.03e-5, 2.68e-6, 3.08e-7 };
+                    const double L[10] = { 9.27e-6, 6.53e-5, 1.78e-4, 1.94e-4, 1.72e-4, 1.42e-4, 1.32e-4, 4.78e-5, 4.00e-6, 4.70e-7 };
+                    const double R[10] = { 8.18e-6, 5.70e-5, 1.58e-4, 1.87e-4, 1.72e-4, 1.44e-4, 1.35e-4, 4.82e-5, 4.03e-6, 4.74e-7 };
+                    juce::Random rnd (7);
+                    std::vector<float> env (tr[0].series.size());
+                    for (auto& v : env) v = 0.2f + rnd.nextFloat();
+                    int n = 0;
+                    for (auto* bp : { C, L, R })
+                    {
+                        auto g = tr[0]; g.name = juce::String ("Rhythm GTR ") + "CLR"[n] + " 2"; g.id = g.name; g.role = "Rhythm Guitar";
+                        double pw = 0; for (int b = 0; b < 10; ++b) { g.bandPow[(size_t) b] = bp[b]; pw += bp[b]; }
+                        // L and R: the same performance, panned; C: another take of the riff, so it follows the same envelope less closely
+                        for (size_t k = 0; k < env.size(); ++k) g.series[k] = (float) pw * env[k] * (1.0f + (n == 0 ? 0.3f : 0.02f) * (rnd.nextFloat() - 0.5f));
+                        dbl.push_back (g); ++n;
+                    }
+                }
+                check (mst::findBuses (dbl).empty(), juce::String::formatted ("doubled guitars (C, L, R takes) aren't taken for buses of each other (%d found)", (int) mst::findBuses (dbl).size()));
             }
             {   // a lead GUITAR is never trimmed with the vocals, and vocals keep their words: tone cuts in 500 Hz - 4 kHz stay small
                 auto lg = stack; mst::TrackInfo g = tr[0]; g.id = "lg"; g.name = "Lead Gtr"; g.role = "Lead Guitar"; lg.push_back (g);
