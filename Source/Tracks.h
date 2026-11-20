@@ -64,6 +64,18 @@ inline bool roleIs (const juce::String& r, std::initializer_list<const char*> na
     return false;
 }
 
+// the lead VOCAL (not a lead guitar). "Lead" alone is what a helper on a vocal bus reports.
+inline bool isLeadVocal (const juce::String& role) { return roleIs (role, { "Lead Vocal" }) || role == "Lead"; }
+
+// the most a vocal is cut in 500 Hz - 4 kHz for the mix's tone: below that the words get lost
+inline double vocalCutCap (const juce::String& role, int band)
+{
+    if (band < 4 || band > 6) return 6.0;
+    if (isLeadVocal (role)) return 2.0;
+    if (roleIs (role, { "Backing" })) return 3.0;
+    return 6.0;
+}
+
 // how willing a track of this role is to move in this band, in this direction
 inline float roleFactor (const juce::String& role, int band, bool cut)
 {
@@ -223,7 +235,11 @@ inline TracksResult planTracks (const Features& mix, const GenreProfile& g, std:
         auto result = [&] (double k)
         {
             double sum = 0;
-            for (size_t i = 0; i < n; ++i) sum += c[i][(size_t) b] * std::pow (10.0, juce::jlimit (-6.0, 6.0, k * w[i]) / 10.0);
+            for (size_t i = 0; i < n; ++i)
+            {
+                const double capDb = cut ? vocalCutCap (plans[i].role, b) : 6.0;
+                sum += c[i][(size_t) b] * std::pow (10.0, juce::jlimit (-capDb, 6.0, k * w[i]) / 10.0);
+            }
             return sum;
         };
         double lo = cut ? -200.0 : 0.0, hi = cut ? 0.0 : 200.0;
@@ -236,7 +252,8 @@ inline TracksResult planTracks (const Features& mix, const GenreProfile& g, std:
         for (size_t i = 0; i < n; ++i)
         {
             if (w[i] <= 0) continue;
-            const float x = (float) std::round (juce::jlimit (-6.0, 6.0, k * w[i]) * 10.0) / 10.0f;
+            const double capDb = cut ? vocalCutCap (plans[i].role, b) : 6.0;
+            const float x = (float) std::round (juce::jlimit (-capDb, 6.0, k * w[i]) * 10.0) / 10.0f;
             if (std::abs (x) < 0.5f) continue;
             plans[i].eq[(size_t) b] = x;
             const int pct = juce::roundToInt (100.0 * c[i][(size_t) b] / tot[(size_t) b]);
@@ -259,7 +276,7 @@ inline TracksResult planTracks (const Features& mix, const GenreProfile& g, std:
         int nBack = 0;
         for (size_t i = 0; i < n; ++i)
         {
-            const bool isLead = roleIs (plans[i].role, { "Lead" }), isBack = roleIs (plans[i].role, { "Backing" });
+            const bool isLead = isLeadVocal (plans[i].role), isBack = roleIs (plans[i].role, { "Backing" });
             if (isBack && plans[i].share > 0) ++nBack;
             for (int b = 4; b <= 6; ++b) (isLead ? lead : (isBack ? back : other)) += c[i][(size_t) b];
         }
@@ -271,11 +288,11 @@ inline TracksResult planTracks (const Features& mix, const GenreProfile& g, std:
             const double share = voc / (voc + other);
             double targetShare = -1;
             if (share < 0.20) targetShare = 0.25;
-            else if (share > 0.65) targetShare = 0.55;
+            else if (share > 0.85) targetShare = 0.75;   // only a clearly overbearing vocal comes down: a buried one is far worse
             if (targetShare > 0)
             {
                 const double a = targetShare * other / ((1.0 - targetShare) * voc);
-                const float t = (float) juce::jlimit (-3.0, 3.0, 10.0 * std::log10 (a));
+                const float t = (float) juce::jlimit (-2.0, 3.0, 10.0 * std::log10 (a));
                 leadT += t; backT += t;
                 const juce::String what = back > 0 ? "the vocals (lead and backing together) make " : "the lead makes ";
                 const juce::String why = what + juce::String (juce::roundToInt (share * 100.0)) + "% of the mix's 500 Hz - 4 kHz range; "
@@ -306,7 +323,7 @@ inline TracksResult planTracks (const Features& mix, const GenreProfile& g, std:
         backT = juce::jlimit (-4.0f, 3.0f, backT);
         for (auto& p : plans)
         {
-            const bool isLead = roleIs (p.role, { "Lead" }), isBack = roleIs (p.role, { "Backing" });
+            const bool isLead = isLeadVocal (p.role), isBack = roleIs (p.role, { "Backing" });
             const float t = isLead ? leadT : (isBack ? backT : 0.0f);
             const auto r = std::round (t * 10.0f) / 10.0f;
             if (std::abs (r) < 0.5f || ! (isLead || isBack)) continue;
@@ -352,16 +369,18 @@ inline TracksResult planTracks (const Features& mix, const GenreProfile& g, std:
         // a lead that jumps around
         for (size_t i = 0; i < n; ++i)
         {
-            if (! roleIs (plans[i].role, { "Lead" }) || ! seriesOk || riddenByFlatliner.count (plans[i].id) > 0) continue;   // Flatliner rides it instead
+            if (! isLeadVocal (plans[i].role) || ! seriesOk || riddenByFlatliner.count (plans[i].id) > 0) continue;   // Flatliner rides it instead
+            // its swing while singing: slots within 40 dB of its loudest (not the silence between lines)
+            float mx = 0; for (auto v : ser[i]) mx = std::max (mx, v);
             std::vector<float> act;
-            for (auto v : ser[i]) if (v > 1e-8f) act.push_back (10.0f * std::log10 (v));
+            for (auto v : ser[i]) if (v > mx * 1e-4f) act.push_back (10.0f * std::log10 (v));
             if (act.size() < 30) continue;
             std::sort (act.begin(), act.end());
             const float range = act[act.size() * 9 / 10] - act[act.size() / 10];
             if (range > 14.0f && ! plans[i].compOn)
             {
                 plans[i].compOn = true; plans[i].comp = 35.0f;
-                plans[i].why.add ("COMP 35%: the lead's level jumps " + juce::String (range, 0) + " dB between its quiet and loud parts. (Flatliner rides it even more smoothly.)");
+                plans[i].why.add ("COMP 35%: the lead's level jumps " + juce::String (juce::roundToInt (range)) + " dB between its quiet and loud parts. (Flatliner rides it even more smoothly.)");
             }
         }
     }
@@ -379,7 +398,7 @@ inline TracksResult planTracks (const Features& mix, const GenreProfile& g, std:
             auto& p = plans[i];
             p.deessOn = true;
             p.deess = std::round (juce::jlimit (20.0f, 80.0f, 30.0f + 3.0f * (t.sibP95 + 9.0f) + 10.0f * juce::jmax (0.0f, biteZ)));
-            p.why.add ("DE-ESS " + juce::String (juce::roundToInt (p.deess)) + "%: this track's \"s\" sounds jump " + juce::String (spike, 0) + " dB above the rest of it, about "
+            p.why.add ("DE-ESS " + juce::String (juce::roundToInt (p.deess)) + "%: this track's \"s\" sounds jump " + juce::String (juce::roundToInt (spike)) + " dB above the rest of it, about "
                        + juce::String (juce::roundToInt (t.sibPerMin)) + " times a minute" + (biteZ > 1.0f ? juce::String (", and the mix's bite (4-8 kHz) is already hot for ") + G : juce::String())
                        + ". Only the top end above " + juce::String (t.sibHz / 1000.0f, 1) + " kHz is turned down, only during an \"s\".");
         }
@@ -411,7 +430,7 @@ inline TracksResult planTracks (const Features& mix, const GenreProfile& g, std:
                     p.transAtk = zPlr < -1.5f ? boost + 15.0f : boost;
                     p.why.add ("ATTACK " + pct (p.transAtk) + ": " + (zPlr < -0.5f
                                ? "the mix's peaks sit only " + juce::String (mix.plr, 1) + " dB over its average (flat for " + G + "), so the hits get more snap at the source"
-                               : "this track's hits only jump " + juce::String (t.transP95, 0) + " dB over its body: soft for a " + p.role.toLowerCase())
+                               : "this track's hits only jump " + juce::String (juce::roundToInt (t.transP95)) + " dB over its body: soft for a " + p.role.toLowerCase())
                                + ". It lifts the first few ms of each hit, not the level.");
                 }
                 else if (! roleIs (p.role, { "Kick" }) && zPlr > 1.0f)
@@ -434,7 +453,7 @@ inline TracksResult planTracks (const Features& mix, const GenreProfile& g, std:
             else if (roleIs (p.role, { "Rhythm" }) && known && t.transP95 > 14.0f && zPlr > 0.5f)
             {
                 p.transAtk = -20.0f;
-                p.why.add ("ATTACK " + pct (p.transAtk) + ": the picking jumps " + juce::String (t.transP95, 0) + " dB over the chords' body and the mix's peaks already stick out; a softer pick attack lets the guitars sit under the drums.");
+                p.why.add ("ATTACK " + pct (p.transAtk) + ": the picking jumps " + juce::String (juce::roundToInt (t.transP95)) + " dB over the chords' body and the mix's peaks already stick out; a softer pick attack lets the guitars sit under the drums.");
             }
             p.transOn = std::abs (p.transAtk) >= 1.0f || std::abs (p.transSus) >= 1.0f;
         }

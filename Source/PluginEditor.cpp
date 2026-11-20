@@ -582,8 +582,13 @@ void ChainView::rebuildTracks (const std::vector<mst::ChainPlan::TrackAdd>& adds
         const auto line = p.name + ": " + (t.linked ? t.summary : juce::String ("not linked any more"));
         row.tip << (row.tip.isEmpty() ? "" : "\n") << line;
     }
+    // a Flatliner already on a vocal bus answers "put Flatliner on a lead / backing vocal bus": show the bus, not the advice
+    bool leadBus = false, backBus = false;
+    for (auto& t : tracks)
+        if (t.kind == "flatliner" && t.name.containsIgnoreCase ("bus")) (mst::backingName (t.name) ? backBus : leadBus) = true;
     for (auto& a : adds)
     {
+        if (a.kind == "flatliner" && ((a.track == "a lead vocal bus" && leadBus) || (a.track == "a backing vocal bus" && backBus))) continue;
         auto& row = rowFor (a.track.isNotEmpty() ? a.track : juce::String ("Guitar and bass tracks"));
         if (a.track.isEmpty()) row.role = "amp noise";
         bool have = false;
@@ -1986,7 +1991,7 @@ juce::String MasterEditor::diagnosticsText() const
     s << "THE MASTER - DIAGNOSTICS (Castle Danger Music Company)\n";
     s << "Version " << JucePlugin_VersionString << "   " << juce::Time::getCurrentTime().toString (true, true) << "\n";
     s << "Host: " << juce::PluginHostType().getHostDescription() << "   " << juce::SystemStats::getOperatingSystemName()
-      << "   " << juce::String (proc.getSampleRate(), 0) << " Hz\n";
+      << "   " << juce::String (juce::roundToInt (proc.getSampleRate())) << " Hz\n";
     s << "OUTPUT: " << (proc.headroomMode() ? "-6 dB (pre-master)" : "-1 dB (finished master)") << "   Genre choice: " << proc.getGenreChoice()
       << "   Stage: " << (stage == 0 ? "not prescribed" : stage == 1 ? "prescribed" : "applied")
       << (proc.chainOutdated() ? " (UPDATE pending)" : "") << "\n";

@@ -790,7 +790,23 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
             if (h.track.isEmpty()) h.track = sp.extra.getProperty ("track", "").toString();
             if (p.kind == "flatliner") ridden.insert (sv);
         }
-        else h.role = p.kind == "flatliner" ? "Lead" : (p.kind == "lowblow" || p.kind == "dominatrix" ? "Bass" : (p.kind == "chopshop" ? "Drums" : "Rhythm"));
+        else
+        {
+            h.role = p.kind == "flatliner" ? "Lead" : (p.kind == "lowblow" || p.kind == "dominatrix" ? "Bass" : (p.kind == "chopshop" ? "Drums" : "Rhythm"));
+            // Flatliner on a vocal bus rides every vocal track that feeds it: their Servants don't
+            // also need a compressor for the jumps
+            if (p.kind == "flatliner" && h.track.containsIgnoreCase ("bus"))
+            {
+                const bool backingBus = mst::backingName (h.track);
+                for (auto& [sid, sp] : peers)
+                {
+                    if (sp.kind != "servant") continue;
+                    const auto r = sp.extra.getProperty ("role", "").toString();
+                    if (backingBus ? mst::roleIs (r, { "Backing" }) : mst::isLeadVocal (r)) ridden.insert (sid);
+                }
+                if (backingBus) h.role = "Backing Vocals";
+            }
+        }
         helpers.push_back (h);
     }
 
@@ -907,11 +923,11 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
         if (t.kind != "buzzkill") continue;
         if (auto* h = findIn (humTracks, t.name))
             t.why.insert (1, "The Servant on this track hears " + juce::String (h->hz) + " Hz hum in its quiet parts (" + juce::String (h->sec)
-                              + " s, " + juce::String (h->db, 0) + " dB over the noise around it): this is a track to clean.");
+                              + " s, " + juce::String (juce::roundToInt (h->db)) + " dB over the noise around it): this is a track to clean.");
         else if (auto* c = findIn (cleanTracks, t.name); c != nullptr && t.note.contains ("NOT LEARNED"))
         {
             for (int w = t.why.size(); --w >= 0;) if (t.why[w].startsWith ("Dead Air hasn't heard") || t.why[w].startsWith ("The mix has")) t.why.remove (w);
-            t.why.insert (1, "CLEAN: The Servant on this track hears no hum, and its noise sits at " + juce::String (c->floorDb, 0)
+            t.why.insert (1, "CLEAN: The Servant on this track hears no hum, and its noise sits at " + juce::String (juce::roundToInt (c->floorDb))
                               + " dBFS, far too quiet to hear. Dead Air has nothing to remove here.");
             t.note = t.note.upToFirstOccurrenceOf ("  //", false, false) + "  //  CLEAN, NOTHING TO REMOVE";
         }
@@ -959,7 +975,7 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
     // a bass that's thin on small speakers: Dominatrix's saturation gives it harmonics
     for (auto& t : tracks)
         if (mst::roleIs (t.role, { "Bass" }) && mst::bassHarmonicsDb (t) < mst::kThinBassDb && ! hasOn ("dominatrix", t.name))
-            chainPlan.adds.push_back ({ "dominatrix", t.name, "Its 250 Hz - 2 kHz sits " + juce::String (-mst::bassHarmonicsDb (t), 0)
+            chainPlan.adds.push_back ({ "dominatrix", t.name, "Its 250 Hz - 2 kHz sits " + juce::String (juce::roundToInt (-mst::bassHarmonicsDb (t)))
                                         + " dB under its lows, so it all but disappears on phones and small speakers. Dominatrix's saturation adds the harmonics "
                                         "that let it be heard there, without changing its level. Put it after The Servant, then press UPDATE." });
     if (! anyLowBlow && clash.found)

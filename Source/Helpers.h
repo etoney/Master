@@ -68,7 +68,7 @@ inline TrackPlan planBuzzKill (const HelperInfo& h, const Features& mix, const G
     p.why.add ("RELEASE " + juce::String (juce::roundToInt (rel * 100.0f)) + "%: " + style + ".");
     if (buzzKillClean (h.extra))
     {
-        p.why.add ("CLEAN: this track's noise sits at " + juce::String (floorDb, 0) + " dBFS, far too quiet to hear, so Dead Air has nothing to remove here."
+        p.why.add ("CLEAN: this track's noise sits at " + juce::String (juce::roundToInt (floorDb)) + " dBFS, far too quiet to hear, so Dead Air has nothing to remove here."
                    + (mix.humSeconds >= 1.0f ? juce::String (" The mix's " + juce::String (mix.humHz) + " Hz hum comes from another track.") : juce::String()));
         p.why.add ("HEAR REMOVED: OFF (so you never print the noise by mistake).");
         p.note = "RELEASE " + juce::String (juce::roundToInt (rel * 100.0f)) + "%  //  CLEAN, NOTHING TO REMOVE";
@@ -78,13 +78,13 @@ inline TrackPlan planBuzzKill (const HelperInfo& h, const Features& mix, const G
         p.why.add ("The mix has " + juce::String (mix.humHz) + " Hz hum in its quiet parts (" + juce::String ((int) mix.humSeconds)
                    + " s). Dead Air removes it here, at the source, so The Master doesn't have to notch the whole mix.");
     if (learned && playDb > -100.0)
-        p.why.add ("This track's noise floor is " + juce::String (floorDb, 0) + " dBFS, " + juce::String (snr, 0) + " dB under your playing"
+        p.why.add ("This track's noise floor is " + juce::String (juce::roundToInt (floorDb)) + " dBFS, " + juce::String (juce::roundToInt (snr)) + " dB under your playing"
                    + (snr < 30.0 ? ": noisy, worth gating." : "."));
     else
         p.why.add ("Dead Air hasn't heard this track's noise yet: play a second of silence (nobody playing) and it learns it by itself.");
     p.why.add ("HEAR REMOVED: OFF (so you never print the noise by mistake).");
     p.note = "RELEASE " + juce::String (juce::roundToInt (rel * 100.0f)) + "%"
-           + (learned && playDb > -100.0 ? "  //  NOISE " + juce::String (floorDb, 0) + " dB" : juce::String ("  //  NOISE NOT LEARNED YET"));
+           + (learned && playDb > -100.0 ? "  //  NOISE " + juce::String (juce::roundToInt (floorDb)) + " dB" : juce::String ("  //  NOISE NOT LEARNED YET"));
     return p;
 }
 
@@ -140,16 +140,16 @@ inline std::vector<FlatAdvice> flatlinerAdvice (const std::vector<TrackInfo>& tr
     if (leadSwing > 10.0f)
     {
         if (lead.size() >= 2)
-            out.push_back ({ "a lead vocal bus", "Your lead vocal is spread over " + juce::String ((int) lead.size()) + " tracks and its level swings " + juce::String (leadSwing, 0)
+            out.push_back ({ "a lead vocal bus", "Your lead vocal is spread over " + juce::String ((int) lead.size()) + " tracks and its level swings " + juce::String (juce::roundToInt (leadSwing))
                              + " dB. Send only the lead tracks to one bus (name it \"Lead Vox Bus\") and put Flatliner on it, then press UPDATE. Keep the backing vocals off this bus, "
                                "or Flatliner lifts them up to the lead whenever they sing alone." });
         else
             out.push_back ({ tracks[lead[0]].name.isNotEmpty() ? tracks[lead[0]].name : juce::String ("the lead"),
-                             "Its level swings " + juce::String (leadSwing, 0) + " dB. Put Flatliner first on the track, then press UPDATE." });
+                             "Its level swings " + juce::String (juce::roundToInt (leadSwing)) + " dB. Put Flatliner first on the track, then press UPDATE." });
     }
     const float backSwing = swingOfSum (tracks, back);
     if (back.size() >= 2 && backSwing > 10.0f)
-        out.push_back ({ "a backing vocal bus", "Your " + juce::String ((int) back.size()) + " backing vocal tracks swing " + juce::String (backSwing, 0)
+        out.push_back ({ "a backing vocal bus", "Your " + juce::String ((int) back.size()) + " backing vocal tracks swing " + juce::String (juce::roundToInt (backSwing))
                          + " dB together. Send them to their own bus (name it \"BVox Bus\") and put Flatliner on it, then press UPDATE. It rides them gently (3 dB at most), "
                            "so they keep their shape and stay under the lead.", true });
     return out;
@@ -193,7 +193,7 @@ inline TrackPlan planFlatliner (const HelperInfo& h, const GenreProfile& g)
     p.params["gate"] = gate;
     p.params["output"] = 0.0f;
 
-    p.why.add ("RANGE " + juce::String (range, 0) + " dB: " + (backingRide && ! steady
+    p.why.add ("RANGE " + juce::String (juce::roundToInt (range)) + " dB: " + (backingRide && ! steady
                ? juce::String ("backing vocals swing ") + juce::String (swing, 1) + " dB; a gentle ride evens them out but keeps their shape, so they stay under the lead."
                : steady
                ? juce::String ("the lead is already steady (it swings only ") + juce::String (swing, 1) + " dB), so just a gentle ride."
@@ -202,9 +202,9 @@ inline TrackPlan planFlatliner (const HelperInfo& h, const GenreProfile& g)
     p.why.add ("TARGET " + juce::String (target, 1) + " dB: where the lead already sits on average, so the ride doesn't change its level. "
                "The Servant's TRIM does the balance against the band.");
     p.why.add ("SPEED " + juce::String (juce::roundToInt (speed)) + "%: " + (speed >= 55.0f ? "quick, to catch every word." : "natural, like a patient hand on the fader."));
-    p.why.add ("GATE " + juce::String (gate, 0) + " dB: the gaps between phrases sit around " + juce::String (floor, 0)
+    p.why.add ("GATE " + juce::String (juce::roundToInt (gate)) + " dB: the gaps between phrases sit around " + juce::String (juce::roundToInt (floor))
                + " dB; below the gate the fader freezes, so breaths and room noise aren't pushed up.");
-    p.note = "RANGE " + juce::String (range, 0) + " dB  //  TARGET " + juce::String (target, 1) + " dB  //  SWING WAS " + juce::String (swing, 0) + " dB";
+    p.note = "RANGE " + juce::String (juce::roundToInt (range)) + " dB  //  TARGET " + juce::String (target, 1) + " dB  //  SWING WAS " + juce::String (juce::roundToInt (swing)) + " dB";
     return p;
 }
 //------------------------------------------------------------------------------
@@ -261,7 +261,7 @@ inline TrackPlan planLowBlow (const HelperInfo& h, const LowClash& clash, const 
     else if (G == "punk")     { depth = 5.0f; release = 60.0f; hold = 10.0f; }
     else if (G == "hardrock") { depth = 5.0f; release = 70.0f; }
     else if (G == "rock")     { depth = 4.0f; release = 90.0f; }
-    juce::String depthWhy = juce::String (depth, 0) + " dB is typical for " + g.name;
+    juce::String depthWhy = juce::String (juce::roundToInt (depth)) + " dB is typical for " + g.name;
     if (clash.measured)
     {
         if (clash.found && clash.gapDb < 3.0f) { depth += 1.0f; depthWhy << ", one more because " << clash.kickName << " and " << clash.bassName << " are almost exactly as loud in the same range"; }
@@ -296,13 +296,13 @@ inline TrackPlan planLowBlow (const HelperInfo& h, const LowClash& clash, const 
                    + bandDefs()[(size_t) clash.band].range + " Hz): their levels there are only " + juce::String (clash.gapDb, 1) + " dB apart.");
     else if (! clash.measured)
         p.why.add ("No Servant with ROLE Kick (or Drums) and Bass, so The Master can't measure the clash: genre settings. Put The Servant on both for a closer fit.");
-    p.why.add ("DEPTH -" + juce::String (depth, 0) + " dB: " + depthWhy + ".");
+    p.why.add ("DEPTH -" + juce::String (juce::roundToInt (depth)) + " dB: " + depthWhy + ".");
     p.why.add ("CROSSOVER " + juce::String (juce::roundToInt (xo)) + " Hz (LOWS ONLY): " + xoWhy + ".");
     p.why.add ("RELEASE " + juce::String (juce::roundToInt (release)) + " ms, HOLD " + juce::String (juce::roundToInt (hold)) + " ms: " + relWhy + ".");
     const bool side = (bool) h.extra.getProperty ("sidechain", false);
     if (! side)
         p.why.add ("Low Blow hears no kick on its sidechain yet. Send the kick track to Low Blow's sidechain input (in Studio Pro: the sidechain button in Low Blow's window). Until then it leaves the bass alone.");
-    p.note = "DEPTH -" + juce::String (depth, 0) + " dB  //  " + juce::String (juce::roundToInt (xo)) + " Hz  //  REL " + juce::String (juce::roundToInt (release)) + " ms"
+    p.note = "DEPTH -" + juce::String (juce::roundToInt (depth)) + " dB  //  " + juce::String (juce::roundToInt (xo)) + " Hz  //  REL " + juce::String (juce::roundToInt (release)) + " ms"
            + (side ? juce::String() : juce::String ("  //  NO KICK ON SIDECHAIN"));
     return p;
 }
@@ -334,7 +334,7 @@ inline TrackPlan planTrackChop (const HelperInfo& h, const TrackInfo* t, const G
     if (t != nullptr && t->transSeconds >= 5.0f)
     {
         shave = juce::jlimit (2.0f, 6.0f, std::round (t->transP95 * 0.3f * 2.0f) / 2.0f);
-        shaveWhy = "its hits stick out " + juce::String (t->transP95, 0) + " dB over its body";
+        shaveWhy = "its hits stick out " + juce::String (juce::roundToInt (t->transP95)) + " dB over its body";
     }
     if (G == "metal" || G == "punk") { shave = std::min (6.0f, shave + 1.0f); shaveWhy << ", a little deeper for " << g.name; }
     const float ceiling = juce::jlimit (-24.0f, 0.0f, std::round ((float) (peak - shave) * 10.0f) / 10.0f);

@@ -554,6 +554,23 @@ int main (int argc, char** argv)
                        juce::String::formatted ("a Servant on the drum bus is found as a bus (%d found)", (int) found.size()));
                 check (mst::findBuses (tr).empty(), "ordinary tracks aren't taken for buses");
             }
+            {   // a lead GUITAR is never trimmed with the vocals, and vocals keep their words: tone cuts in 500 Hz - 4 kHz stay small
+                auto lg = stack; mst::TrackInfo g = tr[0]; g.id = "lg"; g.name = "Lead Gtr"; g.role = "Lead Guitar"; lg.push_back (g);
+                auto hot = mix; hot.band[5] += 6.0f; hot.band[6] += 6.0f;
+                const auto rl = mst::planTracks (hot, rock, lg, {});
+                float leadCut = 0, backCut = 0; bool gtrTrim = false;
+                for (auto& t : rl.tracks)
+                {
+                    for (int b = 4; b <= 6; ++b)
+                    {
+                        if (t.role == "Lead Vocal") leadCut = std::min (leadCut, t.eq[(size_t) b]);
+                        if (t.role == "Backing Vocals") backCut = std::min (backCut, t.eq[(size_t) b]);
+                    }
+                    if (t.role == "Lead Guitar" && t.trimDb != 0.0f) gtrTrim = true;
+                }
+                check (leadCut >= -2.0f && backCut >= -3.0f && ! gtrTrim,
+                       juce::String::formatted ("vocals keep their words (lead cut %.1f, backing %.1f dB in 500 Hz - 4 kHz) and the lead guitar isn't trimmed with them", leadCut, backCut));
+            }
             auto jumpy = tr; for (size_t k = 0; k < jumpy[2].series.size(); ++k) if ((k / 40) % 2 == 1) jumpy[2].series[k] *= 0.05f;
             const auto la = mst::flatlinerAdvice (jumpy);
             const juce::String lw = la.empty() ? juce::String() : la[0].where;

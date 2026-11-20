@@ -69,7 +69,7 @@ inline FreakPlan planFreak (const Features& in, const GenreProfile& g)
         b.why = juce::String (d.label) + " (" + d.range + " Hz) jumps " + juce::String (sw, 1) + " dB above its usual share of the mix in the loud moments ("
               + r.problem + "); about " + juce::String (normal, 1) + " dB is normal" + (hot ? " for a range that's already hot" : "")
               + (rhythmic ? " when it jumps on the beat like this" : "")
-              + ". The Freak cuts it up to " + juce::String (-b.depth, 0) + " dB, only while it does.";
+              + ". The Freak cuts it up to " + juce::String (juce::roundToInt (-b.depth)) + " dB, only while it does.";
         cand.push_back (b);
     }
     std::sort (cand.begin(), cand.end(), [] (const FreakBandPlan& a, const FreakBandPlan& b) { return a.over > b.over; });
