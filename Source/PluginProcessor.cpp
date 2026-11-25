@@ -1033,22 +1033,26 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
                                 + " Hz), " + juce::String (clash.gapDb, 1) + " dB apart. Low Blow ducks the bass under each kick; send the kick to its sidechain, then press UPDATE.");
     }
     {
-        // what the linked Flatliners already ride: the lead, the backing vocals
-        bool leadRidden = false, backRidden = false, gtrRidden = false;
+        // Flatliner goes on the tracks; the ones already there are set together, so parts on different
+        // tracks meet. A Flatliner still on a bus (from before) keeps working for the tracks it carries.
+        mst::matchFlatlinerGroups (chainPlan.tracks, helpers, tracks);
+        bool leadBus = false, backBus = false, gtrBus = false;
         for (auto& t : chainPlan.tracks)
-            if (t.kind == "flatliner")
+            if (t.kind == "flatliner" && t.name.containsIgnoreCase ("bus"))
             {
-                if (mst::roleIs (t.role, { "Lead Guitar" }) || mst::guitarName (t.name)) gtrRidden = true;
-                else if (mst::roleIs (t.role, { "Backing" }) || mst::backingName (t.name)) backRidden = true;
-                else leadRidden = true;
+                if (mst::roleIs (t.role, { "Lead Guitar" }) || mst::guitarName (t.name)) gtrBus = true;
+                else if (mst::roleIs (t.role, { "Backing" }) || mst::backingName (t.name)) backBus = true;
+                else leadBus = true;
+                chainPlan.onTracks.add ("FLATLINER BUS: Flatliner on " + t.name + " works, in live mode only (a bus has no clip for ARA). For ARA, take it off the bus and "
+                                        "apply Flatliner to each track it carries: The Master sets them together, so the parts still meet.");
             }
-        for (int k = chainPlan.onTracks.size(); --k >= 0;) if (chainPlan.onTracks[k].startsWith ("FLATLINER")) chainPlan.onTracks.remove (k);
+        for (int k = chainPlan.onTracks.size(); --k >= 0;) if (chainPlan.onTracks[k].startsWith ("FLATLINER") && ! chainPlan.onTracks[k].startsWith ("FLATLINER BUS")) chainPlan.onTracks.remove (k);
         chainPlan.removeAdds ("flatliner");
         const auto advice = mst::flatlinerAdvice (tracks);
         for (int k = (int) advice.size(); --k >= 0;)
         {
             const auto& a = advice[(size_t) k];
-            if (a.guitar ? gtrRidden : (a.backing ? backRidden : leadRidden)) continue;
+            if (hasOnTrack ("flatliner", a.where) || (a.guitar ? gtrBus : (a.backing ? backBus : leadBus))) continue;
             chainPlan.adds.insert (chainPlan.adds.begin(), { "flatliner", a.where, a.why });
             chainPlan.onTracks.insert (0, "FLATLINER on " + a.where + ": " + a.why);
         }

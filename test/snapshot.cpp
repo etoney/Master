@@ -580,13 +580,15 @@ int main (int argc, char** argv)
             // Flatliner: a lead and its stack, whose level comes and goes -> on a vocal bus
             for (auto& t : stack) if (t.role.startsWith ("Backing")) { auto& sr = t.series; for (size_t k = 0; k < sr.size(); ++k) if ((k / 50) % 2 == 1) sr[k] *= 0.02f; }
             const auto fa = mst::flatlinerAdvice (stack);
-            check (fa.size() == 1 && fa[0].backing && fa[0].where == "a backing vocal bus" && fa[0].why.contains ("16 backing"),
-                   "Flatliner: backing vocals that swing get their own bus, ridden apart from the lead (" + (fa.empty() ? juce::String() : fa[0].where) + ")");
+            int backAsk = 0; bool anyBus = false;
+            for (auto& a : fa) { if (a.backing && a.why.contains ("gently")) ++backAsk; if (a.where.containsIgnoreCase ("bus")) anyBus = true; }
+            check (backAsk == 16 && ! anyBus, juce::String::formatted ("Flatliner: backing vocals that swing get it on each of their tracks, gently, never on a bus (%d asked)", backAsk));
             auto twoLeads = stack; twoLeads.push_back (tr[2]); twoLeads.back().id = "l2"; twoLeads.back().name = "Lead Vox Dbl";
             for (auto* t : { &twoLeads[2], &twoLeads.back() }) for (size_t k = 0; k < t->series.size(); ++k) if ((k / 40) % 2 == 1) t->series[k] *= 0.03f;
             const auto fb = mst::flatlinerAdvice (twoLeads);
-            check (fb.size() == 2 && fb[0].where == "a lead vocal bus" && fb[0].why.contains ("Keep the backing vocals off") && fb[1].backing,
-                   "Flatliner: a lead spread over two tracks gets a lead bus, the backing vocals their own");
+            bool onLead = false, onDbl = false;
+            for (auto& a : fb) { if (a.where == twoLeads[2].name && a.why.contains ("together")) onLead = true; if (a.where == "Lead Vox Dbl") onDbl = true; }
+            check (onLead && onDbl, "Flatliner: a lead spread over two tracks gets it on each track, set together (no lead bus)");
             {   // a lead guitar whose solo jumps around: Flatliner on it (one track) or on a lead guitar bus (two); rhythm guitars never
                 std::vector<mst::TrackInfo> gt;
                 auto solo = tr[0]; solo.id = "g1"; solo.name = "Lead GTR"; solo.role = "Lead Guitar";
@@ -599,7 +601,39 @@ int main (int argc, char** argv)
                 auto dbl = solo; dbl.id = "g3"; dbl.name = "Lead GTR 2";
                 gt.push_back (dbl);
                 const auto gb = mst::flatlinerAdvice (gt);
-                check (gb.size() == 1 && gb[0].guitar && gb[0].where == "a lead guitar bus", "Flatliner: a lead guitar on two tracks gets a lead guitar bus");
+                check (gb.size() == 2 && gb[0].guitar && gb[1].guitar && gb[0].where == "Lead GTR" && gb[1].where == "Lead GTR 2",
+                       "Flatliner: a lead guitar on two tracks gets it on each of them (no lead guitar bus)");
+                // set together: a track that takes turns with the main one is brought to its level; a double keeps its balance
+                {
+                    std::vector<mst::TrackInfo> lt;
+                    auto main = tr[2]; main.id = "m"; main.name = "Lead Vox"; main.role = "Lead Vocal";
+                    auto other = main; other.id = "o"; other.name = "Lead Vox Chorus";
+                    auto dbl = main; dbl.id = "d"; dbl.name = "Lead Vox Dbl";
+                    for (size_t k = 0; k < main.series.size(); ++k)
+                    {
+                        const bool chorus = k >= main.series.size() * 2 / 3;
+                        main.series[k] = chorus ? 0.0f : 1.0f; other.series[k] = chorus ? 0.25f : 0.0f; dbl.series[k] = chorus ? 0.0f : 0.5f;
+                    }
+                    lt = { main, other, dbl };
+                    std::vector<mst::HelperInfo> hs;
+                    std::vector<mst::TrackPlan> ps;
+                    const double p50s[3] = { -20.0, -26.0, -23.0 };
+                    for (int k = 0; k < 3; ++k)
+                    {
+                        mst::HelperInfo h; h.id = "f" + juce::String (k); h.kind = "flatliner"; h.track = lt[(size_t) k].name; h.role = "Lead Vocal";
+                        h.extra = juce::var (new juce::DynamicObject());
+                        for (auto [kk, v] : std::initializer_list<std::pair<const char*, double>> { { "p10", p50s[k] - 12.0 }, { "p50", p50s[k] }, { "p90", p50s[k] + 6.0 }, { "floorDb", -70.0 }, { "seconds", 40.0 } })
+                            h.extra.getDynamicObject()->setProperty (kk, v);
+                        hs.push_back (h);
+                        ps.push_back (mst::planFlatliner (h, rock));
+                    }
+                    ps[2].params["range"] = 99.0f;   // to see it follow the main one
+                    mst::matchFlatlinerGroups (ps, hs, lt);
+                    check (ps[1].params.at ("output") == 6.0f && ps[0].params.at ("output") == 0.0f && ps[1].note.contains ("TO MEET"),
+                           juce::String::formatted ("Flatliners set together: the chorus on its own track is brought to the main lead's level (OUTPUT %+.1f dB)", ps[1].params.at ("output")));
+                    check (ps[2].params.at ("output") == 0.0f && ps[2].params.at ("range") == ps[0].params.at ("range"),
+                           "Flatliners set together: a double that sings along keeps its balance and moves like the main lead (same RANGE)");
+                }
                 mst::HelperInfo h; h.kind = "flatliner"; h.track = "Lead GTR"; h.role = "Lead Guitar";
                 h.extra = juce::var (new juce::DynamicObject());
                 for (auto [k, v] : std::initializer_list<std::pair<const char*, double>> { { "p10", -40.0 }, { "p50", -24.0 }, { "p90", -18.0 }, { "floorDb", -62.0 }, { "seconds", 40.0 } })

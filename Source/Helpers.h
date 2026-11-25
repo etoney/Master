@@ -130,46 +130,43 @@ inline float swingOfSum (const std::vector<TrackInfo>& tracks, const std::vector
     return leadSwingDb (sum);
 }
 
+// Flatliner goes on the TRACKS (applied to the clip with ARA, or first on the track), never on a bus:
+// every track of the lead vocal, of the backing vocals, of the lead guitar that jumps around gets its
+// own, and The Master sets them together (matchFlatlinerGroups) so parts on different tracks meet.
+enum class FlatGroup { none, lead, backing, guitar };
+inline FlatGroup flatGroupOf (const juce::String& role)
+{
+    if (roleIs (role, { "Lead Vocal" }) || role == "Lead") return FlatGroup::lead;
+    if (roleIs (role, { "Backing" })) return FlatGroup::backing;
+    if (roleIs (role, { "Lead Guitar" })) return FlatGroup::guitar;
+    return FlatGroup::none;
+}
+
 inline std::vector<FlatAdvice> flatlinerAdvice (const std::vector<TrackInfo>& tracks)
 {
     std::vector<FlatAdvice> out;
-    std::vector<size_t> lead, back;
-    for (size_t i = 0; i < tracks.size(); ++i)
+    for (auto g : { FlatGroup::lead, FlatGroup::backing, FlatGroup::guitar })
     {
-        if (roleIs (tracks[i].role, { "Lead Vocal" }) || tracks[i].role == "Lead") lead.push_back (i);
-        else if (roleIs (tracks[i].role, { "Backing" })) back.push_back (i);
-    }
-    const float leadSwing = swingOfSum (tracks, lead);
-    if (leadSwing > 10.0f)
-    {
-        if (lead.size() >= 2)
-            out.push_back ({ "a lead vocal bus", "Your lead vocal is spread over " + juce::String ((int) lead.size()) + " tracks and its level swings " + juce::String (juce::roundToInt (leadSwing))
-                             + " dB. Send only the lead tracks to one bus (name it \"Lead Vox Bus\") and put Flatliner on it, then press UPDATE. Keep the backing vocals off this bus, "
-                               "or Flatliner lifts them up to the lead whenever they sing alone." });
-        else
-            out.push_back ({ tracks[lead[0]].name.isNotEmpty() ? tracks[lead[0]].name : juce::String ("the lead"),
-                             "Its level swings " + juce::String (juce::roundToInt (leadSwing)) + " dB. Put Flatliner first on the track, then press UPDATE." });
-    }
-    const float backSwing = swingOfSum (tracks, back);
-    if (back.size() >= 2 && backSwing > 10.0f)
-        out.push_back ({ "a backing vocal bus", "Your " + juce::String ((int) back.size()) + " backing vocal tracks swing " + juce::String (juce::roundToInt (backSwing))
-                         + " dB together. Send them to their own bus (name it \"BVox Bus\") and put Flatliner on it, then press UPDATE. It rides them gently (3 dB at most), "
-                           "so they keep their shape and stay under the lead.", true });
-    // the lead guitar: a solo whose low notes sink and whose bends jump out. (Rhythm guitars are left
-    // alone: the amp already holds them level, and their quiet bits, palm mutes and stops, are the riff.)
-    std::vector<size_t> gtr;
-    for (size_t i = 0; i < tracks.size(); ++i) if (roleIs (tracks[i].role, { "Lead Guitar" })) gtr.push_back (i);
-    const float gtrSwing = swingOfSum (tracks, gtr);
-    if (gtrSwing > 10.0f)
-    {
-        if (gtr.size() >= 2)
-            out.push_back ({ "a lead guitar bus", "Your lead guitar is spread over " + juce::String ((int) gtr.size()) + " tracks and its level swings " + juce::String (juce::roundToInt (gtrSwing))
-                             + " dB. Send only the lead guitar tracks to one bus (name it \"Lead GTR Bus\") and put Flatliner on it, then press UPDATE. "
-                               "It keeps the solo on top: low notes come up, bends and harmonics come down.", false, true });
-        else
-            out.push_back ({ tracks[gtr[0]].name.isNotEmpty() ? tracks[gtr[0]].name : juce::String ("the lead guitar"),
-                             "Its level swings " + juce::String (juce::roundToInt (gtrSwing)) + " dB: low notes sink, bends and harmonics jump out. "
-                             "Put Flatliner first on the track (after Dead Air, if it has one), then press UPDATE.", false, true });
+        std::vector<size_t> idx;
+        for (size_t i = 0; i < tracks.size(); ++i) if (flatGroupOf (tracks[i].role) == g) idx.push_back (i);
+        if (idx.empty()) continue;
+        const float groupSwing = swingOfSum (tracks, idx);
+        for (auto i : idx)
+        {
+            const float own = leadSwingDb (tracks[i].series);
+            if (groupSwing <= 10.0f && own <= 10.0f) continue;
+            const float sw = std::max (groupSwing, own);
+            const auto name = tracks[i].name.isNotEmpty() ? tracks[i].name : juce::String ("the track");
+            juce::String why = "Its level swings " + juce::String (juce::roundToInt (sw)) + " dB"
+                             + (idx.size() > 1 ? juce::String (" (with its ") + juce::String ((int) idx.size() - 1) + " other " + (g == FlatGroup::guitar ? "lead guitar" : (g == FlatGroup::backing ? "backing" : "lead")) + " track" + (idx.size() > 2 ? "s" : "") + ")" : juce::String())
+                             + (g == FlatGroup::guitar ? ": low notes sink, bends and harmonics jump out. " : ". ")
+                             + "Apply Flatliner to the clip (ARA), or put it first on the track"
+                             + (g == FlatGroup::guitar ? " (after Dead Air, if it has one)" : "") + ", then press UPDATE.";
+            if (g == FlatGroup::backing) why << " It levels it gently (3 dB at most), so it keeps its shape and stays under the lead.";
+            if (idx.size() > 1) why << " The Master sets every " << (g == FlatGroup::guitar ? "lead guitar" : (g == FlatGroup::backing ? "backing vocal" : "lead vocal"))
+                                    << " Flatliner together, so parts on different tracks meet at one level.";
+            out.push_back ({ name, why, g == FlatGroup::backing, g == FlatGroup::guitar });
+        }
     }
     return out;
 }
@@ -265,6 +262,70 @@ inline TrackPlan planFlatliner (const HelperInfo& h, const GenreProfile& g)
     p.note = "RANGE " + juce::String (juce::roundToInt (range)) + " dB  //  SECTIONS  //  SWING WAS " + juce::String (juce::roundToInt (swing)) + " dB";
     return p;
 }
+// The Flatliners of one group (the lead vocal's tracks, the backing vocals', the lead guitar's), set
+// together. A track that takes turns with the main one (a verse on one track, the chorus on another) is
+// brought to the main one's level, so the parts meet; a double that sings along keeps its own balance
+// (The Servant's TRIM sets that) and moves the same way as the main one.
+inline float togetherShare (const TrackInfo& a, const TrackInfo& ref)
+{
+    if (a.series.size() != ref.series.size() || ref.series.size() < 30) return 1.0f;
+    auto on = [] (const std::vector<float>& s) { float mx = 0; for (auto v : s) mx = std::max (mx, v); std::vector<bool> r (s.size()); for (size_t k = 0; k < s.size(); ++k) r[k] = mx > 0 && s[k] > mx * 3.2e-4f; return r; };
+    const auto x = on (a.series), y = on (ref.series);
+    size_t both = 0, mine = 0;
+    for (size_t k = 0; k < x.size(); ++k) if (x[k]) { ++mine; if (y[k]) ++both; }
+    return mine > 0 ? (float) both / (float) mine : 0.0f;
+}
+
+inline void matchFlatlinerGroups (std::vector<TrackPlan>& plans, const std::vector<HelperInfo>& helpers, const std::vector<TrackInfo>& tracks)
+{
+    auto helperOf = [&] (const juce::String& id) -> const HelperInfo* { for (auto& h : helpers) if (h.id == id) return &h; return nullptr; };
+    auto trackOf = [&] (const juce::String& name) -> const TrackInfo* { for (auto& t : tracks) if (t.name.equalsIgnoreCase (name)) return &t; return nullptr; };
+    for (auto g : { FlatGroup::lead, FlatGroup::backing, FlatGroup::guitar })
+    {
+        struct M { TrackPlan* plan; const HelperInfo* h; const TrackInfo* t; float p50; size_t active; };
+        std::vector<M> ms;
+        for (auto& p : plans)
+        {
+            if (p.kind != "flatliner" || p.rebel || p.params.empty() || p.name.containsIgnoreCase ("bus")) continue;
+            const auto* h = helperOf (p.id);
+            const auto* t = trackOf (p.name);
+            if (h == nullptr || t == nullptr || flatGroupOf (t->role) != g) continue;
+            size_t act = 0; float mx = 0; for (auto v : t->series) mx = std::max (mx, v);
+            for (auto v : t->series) if (mx > 0 && v > mx * 3.2e-4f) ++act;
+            ms.push_back ({ &p, h, t, (float) (double) h->extra.getProperty ("p50", -100.0), act });
+        }
+        if (ms.size() < 2) continue;
+        // the main one: the track that plays the most
+        size_t ref = 0;
+        for (size_t k = 1; k < ms.size(); ++k) if (ms[k].active > ms[ref].active) ref = k;
+        auto& R = ms[ref];
+        R.plan->why.add ("GROUP: the main " + juce::String (g == FlatGroup::guitar ? "lead guitar" : (g == FlatGroup::backing ? "backing vocal" : "lead vocal"))
+                         + " track; the other " + juce::String ((int) ms.size() - 1) + " meet its level.");
+        for (size_t k = 0; k < ms.size(); ++k)
+        {
+            if (k == ref) continue;
+            auto& m = ms[k];
+            const float together = togetherShare (*m.t, *R.t);
+            if (together < 0.3f)
+            {
+                const float off = std::round (juce::jlimit (-6.0f, 6.0f, R.p50 - m.p50) * 2.0f) / 2.0f;
+                m.plan->params["output"] = off;
+                m.plan->why.add ("OUTPUT " + juce::String (off > 0 ? "+" : "") + juce::String (off, 1) + " dB: this track carries other parts than " + R.t->name
+                                 + " (they play together only " + juce::String (juce::roundToInt (together * 100.0f)) + "% of the time), so it's brought to "
+                                 + R.t->name + "'s level and the parts meet.");
+                if (std::abs (off) >= 0.5f) m.plan->note << "  //  OUTPUT " << (off > 0 ? "+" : "") << juce::String (off, 1) << " TO MEET " << R.t->name.toUpperCase();
+            }
+            else
+            {
+                m.plan->params["output"] = 0.0f;
+                for (auto* k2 : { "range", "speed" }) if (R.plan->params.count (k2) > 0) m.plan->params[k2] = R.plan->params[k2];
+                m.plan->why.add ("A double of " + R.t->name + " (they play together " + juce::String (juce::roundToInt (together * 100.0f))
+                                 + "% of the time): same RANGE and SPEED, so the two move as one; The Servant's TRIM keeps their balance.");
+            }
+        }
+    }
+}
+
 //------------------------------------------------------------------------------
 // LOW BLOW: ducks the bass under each kick (the kick comes in on its sidechain).
 // The clash comes from the Kick and Bass Servants: how close their levels are in the same low bands.
