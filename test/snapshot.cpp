@@ -587,6 +587,33 @@ int main (int argc, char** argv)
             const auto fb = mst::flatlinerAdvice (twoLeads);
             check (fb.size() == 2 && fb[0].where == "a lead vocal bus" && fb[0].why.contains ("Keep the backing vocals off") && fb[1].backing,
                    "Flatliner: a lead spread over two tracks gets a lead bus, the backing vocals their own");
+            {   // a lead guitar whose solo jumps around: Flatliner on it (one track) or on a lead guitar bus (two); rhythm guitars never
+                std::vector<mst::TrackInfo> gt;
+                auto solo = tr[0]; solo.id = "g1"; solo.name = "Lead GTR"; solo.role = "Lead Guitar";
+                for (size_t k = 0; k < solo.series.size(); ++k) if ((k / 30) % 2 == 1) solo.series[k] *= 0.03f;
+                auto chug = solo; chug.id = "g2"; chug.name = "Rhythm GTR L"; chug.role = "Rhythm Guitar";
+                gt.push_back (solo); gt.push_back (chug);
+                const auto ga = mst::flatlinerAdvice (gt);
+                check (ga.size() == 1 && ga[0].guitar && ga[0].where == "Lead GTR" && ga[0].why.contains ("bends"),
+                       "Flatliner: a lead guitar that swings gets it on its own track; the rhythm guitar that swings the same doesn't (" + juce::String ((int) ga.size()) + " asked)");
+                auto dbl = solo; dbl.id = "g3"; dbl.name = "Lead GTR 2";
+                gt.push_back (dbl);
+                const auto gb = mst::flatlinerAdvice (gt);
+                check (gb.size() == 1 && gb[0].guitar && gb[0].where == "a lead guitar bus", "Flatliner: a lead guitar on two tracks gets a lead guitar bus");
+                mst::HelperInfo h; h.kind = "flatliner"; h.track = "Lead GTR"; h.role = "Lead Guitar";
+                h.extra = juce::var (new juce::DynamicObject());
+                for (auto [k, v] : std::initializer_list<std::pair<const char*, double>> { { "p10", -40.0 }, { "p50", -24.0 }, { "p90", -18.0 }, { "floorDb", -62.0 }, { "seconds", 40.0 } })
+                    h.extra.getDynamicObject()->setProperty (k, v);
+                const auto gp = mst::planFlatliner (h, rock);
+                h.role = "Lead"; h.track = "Lead GTR Bus";
+                const auto gpb = mst::planFlatliner (h, rock);
+                h.role = "Lead Vocal"; h.track = "Lead Vox";
+                const auto vp = mst::planFlatliner (h, rock);
+                check (gp.note.startsWith ("GUITAR") && gp.params.at ("speed") < vp.params.at ("speed") && gp.params.at ("range") <= 6.0f
+                         && gp.params.at ("gate") >= -52.0f && gp.params.at ("gate") <= -44.0f && gpb.note.startsWith ("GUITAR"),
+                       juce::String::formatted ("Flatliner on a lead guitar: slower than on a vocal (SPEED %.0f vs %.0f), RANGE %.0f dB, GATE %.0f dB over the amp's hiss; a Lead GTR Bus too",
+                                                gp.params.at ("speed"), vp.params.at ("speed"), gp.params.at ("range"), gp.params.at ("gate")));
+            }
             {
                 mst::HelperInfo h; h.kind = "flatliner"; h.track = "BVox Bus"; h.role = "Lead";
                 h.extra = juce::var (new juce::DynamicObject());

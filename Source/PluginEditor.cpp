@@ -583,12 +583,12 @@ void ChainView::rebuildTracks (const std::vector<mst::ChainPlan::TrackAdd>& adds
         row.tip << (row.tip.isEmpty() ? "" : "\n") << line;
     }
     // a Flatliner already on a vocal bus answers "put Flatliner on a lead / backing vocal bus": show the bus, not the advice
-    bool leadBus = false, backBus = false;
+    bool leadBus = false, backBus = false, gtrBus = false;
     for (auto& t : tracks)
-        if (t.kind == "flatliner" && t.name.containsIgnoreCase ("bus")) (mst::backingName (t.name) ? backBus : leadBus) = true;
+        if (t.kind == "flatliner" && t.name.containsIgnoreCase ("bus")) (mst::guitarName (t.name) ? gtrBus : (mst::backingName (t.name) ? backBus : leadBus)) = true;
     for (auto& a : adds)
     {
-        if (a.kind == "flatliner" && ((a.track == "a lead vocal bus" && leadBus) || (a.track == "a backing vocal bus" && backBus))) continue;
+        if (a.kind == "flatliner" && ((a.track == "a lead vocal bus" && leadBus) || (a.track == "a backing vocal bus" && backBus) || (a.track == "a lead guitar bus" && gtrBus))) continue;
         auto& row = rowFor (a.track.isNotEmpty() ? a.track : juce::String ("Guitar and bass tracks"));
         if (a.track.isEmpty()) row.role = "amp noise";
         bool have = false;

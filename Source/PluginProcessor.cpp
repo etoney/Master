@@ -799,7 +799,13 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
             h.role = p.kind == "flatliner" ? "Lead" : (p.kind == "lowblow" || p.kind == "dominatrix" ? "Bass" : (p.kind == "chopshop" ? "Drums" : (p.kind == "freak" ? "Unmask" : "Rhythm")));
             // Flatliner on a vocal bus rides every vocal track that feeds it: their Servants don't
             // also need a compressor for the jumps
-            if (p.kind == "flatliner" && h.track.containsIgnoreCase ("bus"))
+            if (p.kind == "flatliner" && h.track.containsIgnoreCase ("bus") && mst::guitarName (h.track))
+            {   // a lead guitar bus: it rides the lead guitar tracks
+                h.role = "Lead Guitar";
+                for (auto& [sid, sp] : peers)
+                    if (sp.kind == "servant" && mst::roleIs (sp.extra.getProperty ("role", "").toString(), { "Lead Guitar" })) ridden.insert (sid);
+            }
+            else if (p.kind == "flatliner" && h.track.containsIgnoreCase ("bus"))
             {
                 const bool backingBus = mst::backingName (h.track);
                 for (auto& [sid, sp] : peers)
@@ -1028,16 +1034,21 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
     }
     {
         // what the linked Flatliners already ride: the lead, the backing vocals
-        bool leadRidden = false, backRidden = false;
+        bool leadRidden = false, backRidden = false, gtrRidden = false;
         for (auto& t : chainPlan.tracks)
-            if (t.kind == "flatliner") { if (mst::roleIs (t.role, { "Backing" }) || mst::backingName (t.name)) backRidden = true; else leadRidden = true; }
+            if (t.kind == "flatliner")
+            {
+                if (mst::roleIs (t.role, { "Lead Guitar" }) || mst::guitarName (t.name)) gtrRidden = true;
+                else if (mst::roleIs (t.role, { "Backing" }) || mst::backingName (t.name)) backRidden = true;
+                else leadRidden = true;
+            }
         for (int k = chainPlan.onTracks.size(); --k >= 0;) if (chainPlan.onTracks[k].startsWith ("FLATLINER")) chainPlan.onTracks.remove (k);
         chainPlan.removeAdds ("flatliner");
         const auto advice = mst::flatlinerAdvice (tracks);
         for (int k = (int) advice.size(); --k >= 0;)
         {
             const auto& a = advice[(size_t) k];
-            if (a.backing ? backRidden : leadRidden) continue;
+            if (a.guitar ? gtrRidden : (a.backing ? backRidden : leadRidden)) continue;
             chainPlan.adds.insert (chainPlan.adds.begin(), { "flatliner", a.where, a.why });
             chainPlan.onTracks.insert (0, "FLATLINER on " + a.where + ": " + a.why);
         }

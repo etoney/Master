@@ -110,11 +110,14 @@ inline bool backingName (const juce::String& n)
     return n.trim().equalsIgnoreCase ("bv") || n.startsWithIgnoreCase ("bv");
 }
 
-// Flatliner, where it's needed: vocals that jump around. Lead and backing are ridden apart, so the
+// a guitar track or bus, by its name ("Lead GTR Bus", "Solo Guitar")
+inline bool guitarName (const juce::String& n) { return n.containsIgnoreCase ("gtr") || n.containsIgnoreCase ("guitar"); }
+
+// Flatliner, where it's needed: vocals that jump around, and a lead guitar whose solo does. Lead and backing are ridden apart, so the
 // ride never lifts the backing vocals up to the lead when they sing alone:
 //  - the lead: on its track, or on a LEAD bus when it's spread over several tracks (doubles, comps);
 //  - the backing vocals, when there are several and their level swings: on a BACKING bus, gently.
-struct FlatAdvice { juce::String where, why; bool backing = false; };
+struct FlatAdvice { juce::String where, why; bool backing = false, guitar = false; };
 
 inline float swingOfSum (const std::vector<TrackInfo>& tracks, const std::vector<size_t>& idx)
 {
@@ -152,7 +155,54 @@ inline std::vector<FlatAdvice> flatlinerAdvice (const std::vector<TrackInfo>& tr
         out.push_back ({ "a backing vocal bus", "Your " + juce::String ((int) back.size()) + " backing vocal tracks swing " + juce::String (juce::roundToInt (backSwing))
                          + " dB together. Send them to their own bus (name it \"BVox Bus\") and put Flatliner on it, then press UPDATE. It rides them gently (3 dB at most), "
                            "so they keep their shape and stay under the lead.", true });
+    // the lead guitar: a solo whose low notes sink and whose bends jump out. (Rhythm guitars are left
+    // alone: the amp already holds them level, and their quiet bits, palm mutes and stops, are the riff.)
+    std::vector<size_t> gtr;
+    for (size_t i = 0; i < tracks.size(); ++i) if (roleIs (tracks[i].role, { "Lead Guitar" })) gtr.push_back (i);
+    const float gtrSwing = swingOfSum (tracks, gtr);
+    if (gtrSwing > 10.0f)
+    {
+        if (gtr.size() >= 2)
+            out.push_back ({ "a lead guitar bus", "Your lead guitar is spread over " + juce::String ((int) gtr.size()) + " tracks and its level swings " + juce::String (juce::roundToInt (gtrSwing))
+                             + " dB. Send only the lead guitar tracks to one bus (name it \"Lead GTR Bus\") and put Flatliner on it, then press UPDATE. "
+                               "It keeps the solo on top: low notes come up, bends and harmonics come down.", false, true });
+        else
+            out.push_back ({ tracks[gtr[0]].name.isNotEmpty() ? tracks[gtr[0]].name : juce::String ("the lead guitar"),
+                             "Its level swings " + juce::String (juce::roundToInt (gtrSwing)) + " dB: low notes sink, bends and harmonics jump out. "
+                             "Put Flatliner first on the track (after Dead Air, if it has one), then press UPDATE.", false, true });
+    }
     return out;
+}
+
+// FLATLINER ON A LEAD GUITAR: keeps the solo on top. Low notes and legato runs come up, bends, pinch
+// harmonics and picked accents come down. Slower than on a vocal (notes ring, and a fast ride would
+// pump the sustain), a smaller range (the solo's shape is part of it), and the gate sits above the amp's
+// hiss so the fader never lifts the noise between phrases.
+inline TrackPlan planFlatlinerGuitar (TrackPlan p, const HelperInfo& h, const GenreProfile& g, float p10, float p50, float p90, float floor)
+{
+    const juce::String part = roleIs (h.role, { "Rhythm" }) ? "the part" : "the solo";
+    const float swing = p90 - p10;
+    const auto G = genreKey (g);
+    float speed = 35.0f;
+    if (G == "metal") speed = 40.0f; else if (G == "punk") speed = 30.0f;
+    const bool steady = swing < 6.0f;
+    const float range = steady ? 3.0f : juce::jlimit (3.0f, 6.0f, std::round (swing * 0.35f));
+    const float target = juce::jlimit (-40.0f, 0.0f, std::round (p50 * 2.0f) / 2.0f);
+    float gate = std::max (floor + 10.0f, -80.0f);
+    gate = std::min (gate, p10 - 4.0f);
+    gate = juce::jlimit (-80.0f, -20.0f, std::round (gate));
+    p.params["ride"] = 1.0f; p.params["follow"] = 1.0f; p.params["target"] = target; p.params["range"] = range;
+    p.params["speed"] = speed; p.params["gate"] = gate; p.params["output"] = 0.0f;
+    p.why.add ("RANGE " + juce::String (juce::roundToInt (range)) + " dB: " + (steady
+               ? part + " is already steady (it swings only " + juce::String (swing, 1) + " dB), so just a gentle ride."
+               : part + " swings " + juce::String (swing, 1) + " dB between its quiet and loud notes; the ride keeps it on top without flattening its shape."));
+    p.why.add ("SECTIONS ON: the ride follows where " + part + " has been sitting for the last few seconds, so a part that builds still builds.");
+    p.why.add ("TARGET " + juce::String (target, 1) + " dB: where " + part + " sits on average, used only if you turn SECTIONS off.");
+    p.why.add ("SPEED " + juce::String (juce::roundToInt (speed)) + "%: slower than on a vocal, so held notes and feedback ring out without pumping.");
+    p.why.add ("GATE " + juce::String (juce::roundToInt (gate)) + " dB: the amp's noise between phrases sits around " + juce::String (juce::roundToInt (floor))
+               + " dB; below the gate the fader freezes, so the hiss is never pushed up.");
+    p.note = "GUITAR  //  RANGE " + juce::String (juce::roundToInt (range)) + " dB  //  SWING WAS " + juce::String (juce::roundToInt (swing)) + " dB";
+    return p;
 }
 
 inline TrackPlan planFlatliner (const HelperInfo& h, const GenreProfile& g)
@@ -180,6 +230,9 @@ inline TrackPlan planFlatliner (const HelperInfo& h, const GenreProfile& g)
 
     const bool steady = swing < 6.0f;
     const bool backingRide = roleIs (h.role, { "Backing" }) || backingName (h.track);   // the backing vocals: ridden gently
+    // a lead guitar: notes ring and bend, so the hand moves slower, and the amp's noise sits higher
+    const bool guitar = h.role.containsIgnoreCase ("Guitar") || (h.role == "Lead" && guitarName (h.track));
+    if (guitar) return planFlatlinerGuitar (p, h, g, p10, p50, p90, floor);
     // SECTIONS on: the ride follows the vocal's own level over the last few seconds, so a louder chorus
     // stays louder; the range only has to even out the words, never whole sections
     const float range = steady || backingRide ? 3.0f : juce::jlimit (3.0f, 8.0f, std::round (swing * factor * 0.6f));
