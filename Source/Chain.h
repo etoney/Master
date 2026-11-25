@@ -105,6 +105,7 @@ struct ChainPlan
             juce::Array<juce::var> e; for (auto v : t.eq) e.add ((double) v);
             to->setProperty ("eq", e);
             to->setProperty ("why", t.why.joinIntoString ("\n"));
+            if (! t.bandNotes.isEmpty()) to->setProperty ("bandNotes", t.bandNotes.joinIntoString ("\n"));
             auto* po = new juce::DynamicObject();
             for (auto& [k, v] : t.params) po->setProperty (k, (double) v);
             to->setProperty ("params", juce::var (po));
@@ -167,6 +168,7 @@ struct ChainPlan
                 t.transAtk = (float) (double) tv.getProperty ("transAtk", 0.0); t.transSus = (float) (double) tv.getProperty ("transSus", 0.0); t.transOn = tv.getProperty ("transOn", false);
                 if (auto* e = tv.getProperty ("eq", {}).getArray()) for (int b = 0; b < juce::jmin (kNumBands, e->size()); ++b) t.eq[(size_t) b] = (float) (double) (*e)[b];
                 t.why = juce::StringArray::fromLines (tv.getProperty ("why", "").toString()); t.why.removeEmptyStrings();
+                t.bandNotes = juce::StringArray::fromLines (tv.getProperty ("bandNotes", "").toString()); t.bandNotes.removeEmptyStrings();
                 if (auto* po = tv.getProperty ("params", {}).getDynamicObject()) for (auto& p : po->getProperties()) t.params[p.name.toString()] = (float) (double) p.value;
                 c.tracks.push_back (t);
             }

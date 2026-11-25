@@ -605,7 +605,7 @@ bool MasterProcessor::isTrackPeer (const juce::String& id) const
     if (it == peers.end()) return false;
     const auto& p = it->second;
     if (isTrackKind (p.kind)) return true;
-    if (p.kind != "chopshop" && p.kind != "dominatrix") return false;
+    if (p.kind != "chopshop" && p.kind != "dominatrix" && p.kind != "freak") return false;
     const auto track = p.extra.getProperty ("track", "").toString();
     if (track.isEmpty()) return false;
     // on a channel other than The Master's own: a track (or a bus), never the master bus
@@ -774,7 +774,7 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
     std::set<juce::String> ridden;
     for (auto& [id, p] : peers)
     {
-        if (p.kind != "buzzkill" && p.kind != "flatliner" && p.kind != "lowblow" && ! ((p.kind == "chopshop" || p.kind == "dominatrix") && isTrackPeer (id))) continue;
+        if (p.kind != "buzzkill" && p.kind != "flatliner" && p.kind != "lowblow" && ! ((p.kind == "chopshop" || p.kind == "dominatrix" || p.kind == "freak") && isTrackPeer (id))) continue;
         mst::HelperInfo h;
         h.id = id; h.kind = p.kind; h.extra = p.extra;
         h.track = p.extra.getProperty ("track", "").toString();
@@ -796,7 +796,7 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
         }
         else
         {
-            h.role = p.kind == "flatliner" ? "Lead" : (p.kind == "lowblow" || p.kind == "dominatrix" ? "Bass" : (p.kind == "chopshop" ? "Drums" : "Rhythm"));
+            h.role = p.kind == "flatliner" ? "Lead" : (p.kind == "lowblow" || p.kind == "dominatrix" ? "Bass" : (p.kind == "chopshop" ? "Drums" : (p.kind == "freak" ? "Unmask" : "Rhythm")));
             // Flatliner on a vocal bus rides every vocal track that feeds it: their Servants don't
             // also need a compressor for the jumps
             if (p.kind == "flatliner" && h.track.containsIgnoreCase ("bus"))
@@ -814,9 +814,15 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
         helpers.push_back (h);
     }
 
+    // The Freak on a track (UNMASK): where, and whether the vocal reaches its sidechain
+    std::vector<mst::KeyedFreak> keyed;
+    auto freakKeyHeard = [] (const juce::var& x) { return (double) x.getProperty ("keySeconds", 0.0) >= 5.0; };
+    for (auto& h : helpers) if (h.kind == "freak" && ! isRebel (h.id)) keyed.push_back ({ h.track, freakKeyHeard (h.extra) });
+    std::vector<mst::UnmaskPair> unmask;
     if (! tracks.empty())
     {
-        auto tr = mst::planTracks (in, genres[(size_t) target.index], tracks, mixSeries, ridden);
+        auto tr = mst::planTracks (in, genres[(size_t) target.index], tracks, mixSeries, ridden, keyed);
+        unmask = tr.unmask;
         chainPlan.tracks = tr.tracks;
         chainPlan.tracksNote = tr.note;
         // The Master's own EQ only does what the tracks couldn't
@@ -841,9 +847,11 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
         bool rebel = isRebel (h.id);
         // a Cutthroat or Dominatrix on a track that The Master didn't ask for is yours: it switches
         // REBEL on for it, once (turn REBEL off and The Master runs it from then on)
-        if (! rebel && (h.kind == "chopshop" || h.kind == "dominatrix"))
+        if (! rebel && (h.kind == "chopshop" || h.kind == "dominatrix" || h.kind == "freak"))
         {
             bool asked = false;
+            if (h.kind == "freak")   // asked for when it sits on (or over) a track that hides the vocal
+                for (auto& u : unmask) if (u.owner == mst::Owner::leadVocal && mst::freakCovers (h.track, tracks[u.loser])) asked = true;
             for (auto& a : askedBefore) if (a.kind == h.kind && a.track.equalsIgnoreCase (h.track)) asked = true;
             if (h.kind == "chopshop")
                 for (auto& sv : chainPlan.tracks) if (sv.kind == "servant" && sv.name.equalsIgnoreCase (h.track) && mst::wantsDrumClip (sv)) asked = true;
@@ -886,6 +894,7 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
                 }
         }
         else if (h.kind == "dominatrix") chainPlan.tracks.push_back (mst::planTrackDom (h, trackInfo(), G));
+        else if (h.kind == "freak") chainPlan.tracks.push_back (mst::planUnmaskFreak (h.id, h.track, unmask, tracks, freakKeyHeard (h.extra)));
         else if (h.kind == "lowblow") { chainPlan.tracks.push_back (mst::planLowBlow (h, clash, G)); anyLowBlow = true; }
         else if (h.kind == "buzzkill") { chainPlan.tracks.push_back (mst::planBuzzKill (h, in, G)); anyBuzz = true; }
         else                      { chainPlan.tracks.push_back (mst::planFlatliner (h, G)); anyFlat = true; }
@@ -982,6 +991,33 @@ juce::String MasterProcessor::prescribe (bool fromFrozen)
             chainPlan.adds.push_back ({ "dominatrix", t.name, "Its 250 Hz - 2 kHz sits " + juce::String (juce::roundToInt (-mst::bassHarmonicsDb (t)))
                                         + " dB under its lows, so it all but disappears on phones and small speakers. Dominatrix's saturation adds the harmonics "
                                         "that let it be heard there, without changing its level. Put it after The Servant, then press UPDATE." });
+    // UNMASK: the tracks that hide the vocal and have no Freak keyed by it yet. Three or more guitars: one
+    // Freak on their bus; otherwise one on each track.
+    {
+        std::vector<size_t> open;
+        for (auto& u : unmask)
+        {
+            if (u.owner != mst::Owner::leadVocal) continue;
+            bool covered = false;
+            for (auto& h : helpers) if (h.kind == "freak" && mst::freakCovers (h.track, tracks[u.loser])) covered = true;
+            if (! covered && std::find (open.begin(), open.end(), u.loser) == open.end()) open.push_back (u.loser);
+        }
+        int guitars = 0; for (auto i : open) if (tracks[i].role.containsIgnoreCase ("Guitar")) ++guitars;
+        juce::StringArray names; for (auto i : open) names.add (tracks[i].name);
+        if (guitars >= 3)
+        {
+            chainPlan.adds.push_back ({ "freak", "a guitar bus", "These guitars hide the lead vocal's range while it sings: " + names.joinIntoString (", ")
+                                        + ". Send them to a bus named for them (\"Guitar Bus\"), put The Freak on it with the lead vocal on its sidechain, then press UPDATE. "
+                                        "It makes room only while the vocal sings." });
+            for (int k = (int) open.size(); --k >= 0;) if (tracks[open[(size_t) k]].role.containsIgnoreCase ("Guitar")) open.erase (open.begin() + k);
+        }
+        for (auto i : open)
+            chainPlan.adds.push_back ({ "freak", tracks[i].name, "It hides the lead vocal's range while the vocal sings. Put The Freak after The Servant, "
+                                        "send the lead vocal to its sidechain, then press UPDATE. It makes room only while the vocal sings." });
+        if (! names.isEmpty())
+            chainPlan.onTracks.add ("UNMASK: " + names.joinIntoString (", ") + " hide the lead vocal's range. Until The Freak (keyed by the vocal) is on them, "
+                                    "their Servants make a small fixed pocket.");
+    }
     if (! anyLowBlow && clash.found)
     {
         chainPlan.adds.push_back ({ "lowblow", clash.bassName, "It and " + clash.kickName + " fight in " + juce::String (mst::bandDefs()[(size_t) clash.band].label)
@@ -1053,6 +1089,14 @@ juce::String MasterProcessor::applyChain()
     {
         if (peers.count (t.id) == 0 || t.params.empty() || t.rebel || isRebel (t.id)) continue;
         sendSet (t.id, t.params, "The Master: " + chainPlan.genreName + " mix balance");
+        if (t.kind == "freak")
+        {
+            auto m = cdlink::Endpoint::makeMessage ("freak-notes");
+            juce::Array<juce::var> a;
+            for (int k = 0; k < 6; ++k) a.add (t.bandNotes[k]);
+            m->setProperty ("notes", a);
+            link->send (m, t.id);
+        }
         ++tracksSet;
     }
 
@@ -1232,6 +1276,8 @@ bool MasterProcessor::chainOutdated() const
         // Low Blow was planned before the kick reached its sidechain, and now it hears it: plan it properly
         if (t.kind == "lowblow" && t.note.contains ("NO KICK ON SIDECHAIN") && (bool) x.getProperty ("sidechain", false)
             && (double) x.getProperty ("kickSeconds", 0.0) >= 5.0) return true;
+        // a Freak planned before the vocal reached its sidechain, and now it hears it
+        if (t.kind == "freak" && t.note.contains ("NO VOCAL ON SIDECHAIN") && (double) x.getProperty ("keySeconds", 0.0) >= 5.0) return true;
     }
     for (auto& [id, p] : peers)
     {

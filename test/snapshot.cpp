@@ -459,6 +459,62 @@ int main (int argc, char** argv)
         check (res.tracks[0].eq[3] < -1.0f && res.tracks[0].eq[3] < res.tracks[1].eq[3] && res.tracks[0].eq[3] < res.tracks[3].eq[3],
                juce::String::formatted ("the mud (250-500 Hz) is cut mostly on the rhythm guitar that makes it (%.1f dB)", res.tracks[0].eq[3]));
         check (res.tracks[1].eq[0] >= 0.0f && res.tracks[1].eq[1] >= 0.0f, juce::String::formatted ("the bass keeps its low end (sub %+.1f, bass %+.1f dB)", res.tracks[1].eq[0], res.tracks[1].eq[1]));
+        // UNMASK: the rhythm guitar sits on the lead vocal's range while it sings
+        {
+            const mst::UnmaskPair* gv = nullptr;
+            for (auto& u : res.unmask) if (u.owner == mst::Owner::leadVocal && u.loser == 0 && (gv == nullptr || u.overlapDb > gv->overlapDb)) gv = &u;
+            check (gv != nullptr && gv->band >= 4 && gv->band <= 6 && gv->depth >= 2.0f && gv->depth <= 6.0f && gv->together > 0.9f,
+                   gv == nullptr ? juce::String ("UNMASK: the rhythm guitar is found hiding the lead vocal (none found)")
+                                 : juce::String::formatted ("UNMASK: the rhythm guitar is found hiding the lead vocal in %s (%+.1f dB against it, %.0f%% of the time, cut %.0f dB)",
+                                                            mst::bandDefs()[(size_t) gv->band].label, gv->overlapDb, gv->together * 100.0f, gv->depth));
+            bool noOthers = true;
+            for (auto& u : res.unmask) if (u.loser != 0) noOthers = false;   // bass, snare and the vocal itself never yield to the vocal
+            check (noOthers, "UNMASK: only the guitar yields (not the bass, the snare or the vocal)");
+            if (gv != nullptr)
+            {
+                const int b = gv->band;
+                bool why = false; for (auto& w : res.tracks[0].why) if (w.contains ("UNMASK") && w.contains ("lead vocal")) why = true;
+                const auto keyedFirst = mst::planTracks (mix, rock, tr, mixS, {}, { { "Rhythm Gtr", true } });   // the tone move alone
+                check (res.tracks[0].eq[(size_t) b] <= keyedFirst.tracks[0].eq[(size_t) b] - gv->staticDepth + 0.05f && why,
+                       juce::String::formatted ("UNMASK without The Freak: the guitar's Servant makes a fixed pocket (%+.1f dB in %s), with the reason", res.tracks[0].eq[(size_t) b], mst::bandDefs()[(size_t) b].label));
+                check (res.tracks[2].eq[(size_t) b] >= 0.0f, juce::String::formatted ("UNMASK: the lead vocal keeps its own range (%+.1f dB)", res.tracks[2].eq[(size_t) b]));
+                // with The Freak on the guitar, hearing the vocal on its sidechain: no fixed pocket, The Freak does it while the vocal sings
+                const auto keyed = mst::planTracks (mix, rock, tr, mixS, {}, { { "Rhythm Gtr", true } });
+                bool freakWhy = false; for (auto& w : keyed.tracks[0].why) if (w.contains ("The Freak on Rhythm Gtr cuts it")) freakWhy = true;
+                check (keyed.tracks[0].eq[(size_t) b] > res.tracks[0].eq[(size_t) b] + 0.4f && freakWhy,
+                       juce::String::formatted ("UNMASK with a keyed Freak: no fixed pocket on the Servant (%+.1f dB, was %+.1f)", keyed.tracks[0].eq[(size_t) b], res.tracks[0].eq[(size_t) b]));
+                const auto deaf = mst::planTracks (mix, rock, tr, mixS, {}, { { "Rhythm Gtr", false } });
+                check (deaf.tracks[0].eq[(size_t) b] == res.tracks[0].eq[(size_t) b], "UNMASK: a Freak that doesn't hear the vocal yet leaves the fixed pocket in place");
+                const auto fp = mst::planUnmaskFreak ("f1", "Rhythm Gtr", res.unmask, tr, true);
+                check (fp.params.at ("b1on") == 1.0f && fp.params.at ("b1k") == 1.0f && fp.params.at ("b1g") == 0.0f && fp.params.at ("b1d") <= -2.0f
+                         && std::abs (fp.params.at ("b1f") - mst::bandCentreHz (fp.params.at ("b1f") > 2000.0f ? 6 : (fp.params.at ("b1f") > 1000.0f ? 5 : 4))) < 1.0f
+                         && fp.note.startsWith ("UNMASK") && fp.bandNotes[0].contains ("Room for the vocal") && fp.params.at ("b6on") == 0.0f,
+                       "The Freak on the guitar: KEY bands at the vocal's ranges, cut only (no static gain), with notes (" + fp.note + ")");
+                const auto fn = mst::planUnmaskFreak ("f1", "Rhythm Gtr", res.unmask, tr, false);
+                check (fn.note.contains ("NO VOCAL ON SIDECHAIN"), "The Freak without the vocal on its sidechain says so");
+            }
+            mst::TrackInfo rg; rg.name = "Rhythm GTR L"; rg.role = "Rhythm Guitar";
+            mst::TrackInfo lg; lg.name = "Lead GTR"; lg.role = "Lead Guitar";
+            mst::TrackInfo ky; ky.name = "Synth"; ky.role = "Keys / Pads";
+            check (mst::freakCovers ("Guitar Bus", rg) && mst::freakCovers ("Guitar Bus", lg) && mst::freakCovers ("Rhythm GTR Bus", rg) && ! mst::freakCovers ("Rhythm GTR Bus", lg)
+                     && mst::freakCovers ("Keys Bus", ky) && ! mst::freakCovers ("Keys Bus", rg) && mst::freakCovers ("Synth", ky) && ! mst::freakCovers ("Drum Bus", rg),
+                   "The Freak on a bus covers the tracks the bus is named for");
+            // a solo that only plays between the vocal lines doesn't hide the vocal
+            auto solo = tr;
+            mst::TrackInfo s1 = tr[0]; s1.id = "t9"; s1.name = "Lead GTR"; s1.role = "Lead Guitar";
+            auto soloMix = mixS;
+            for (int k = 0; k < T; ++k)
+            {
+                const bool sings = (k / 40) % 2 == 0;
+                s1.series[(size_t) k] = sings ? 0.0f : 2.0f;
+                if (! sings) { soloMix[(size_t) k] -= solo[2].series[(size_t) k] * (float) fader[2]; solo[2].series[(size_t) k] = 0.0f; }
+                soloMix[(size_t) k] += s1.series[(size_t) k];
+            }
+            solo.push_back (s1);
+            const auto rs = mst::planTracks (mix, rock, solo, soloMix);
+            bool soloHides = false; for (auto& u : rs.unmask) if (u.loser == 4 && u.owner == mst::Owner::leadVocal) soloHides = true;
+            check (! soloHides, "UNMASK: a guitar solo between the vocal lines doesn't have to make room for the vocal");
+        }
         {
             auto quiet = tr;
             for (auto& v : quiet[2].bandPow) v *= 0.25;

@@ -80,6 +80,7 @@ inline FreakPlan planFreak (const Features& in, const GenreProfile& g)
     for (int i = 0; i < 6; ++i)
     {
         const auto n = "b" + juce::String (i + 1);
+        fp.params[n + "k"] = 0.0f;   // the master bus listens to itself (KEY is for unmasking on a track)
         if (i < (int) cand.size())
         {
             const auto& b = cand[(size_t) i];

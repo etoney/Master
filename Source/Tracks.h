@@ -41,6 +41,7 @@ struct TrackPlan
     float trimDb = 0, comp = 0, deess = 0, transAtk = 0, transSus = 0;
     bool compOn = false, deessOn = false, transOn = false;
     juce::StringArray why;
+    juce::StringArray bandNotes;                // The Freak on a track: a short reason per band
     std::map<juce::String, float> params;       // what goes to The Servant
     juce::String summary() const
     {
@@ -112,6 +113,10 @@ inline std::vector<double> fitGains (const std::vector<float>& mix, const std::v
     return g;
 }
 
+} // namespace mst
+#include "Unmask.h"
+namespace mst
+{
 // A Servant on a bus (a drum bus, a vocal bus) hears tracks that have their own Servants. Planning
 // it as a track would count them twice, and its ROLE ("Drums") would stand in for the kick. It shows
 // up in the fingerprints: its level over time is the sum of a few other tracks, and so is its tone.
@@ -177,12 +182,13 @@ inline std::vector<BusFound> findBuses (const std::vector<TrackInfo>& tracks)
 struct TracksResult
 {
     std::vector<TrackPlan> tracks;
+    std::vector<UnmaskPair> unmask;              // who hides whom (UNMASK), for The Freak on the tracks
     std::array<float, kNumBands> residualEq {};   // what's left for The Master's own EQ
     juce::String note;
 };
 
 inline TracksResult planTracks (const Features& mix, const GenreProfile& g, std::vector<TrackInfo> tracks, const std::vector<float>& mixSeries,
-                                const std::set<juce::String>& riddenByFlatliner = {})
+                                const std::set<juce::String>& riddenByFlatliner = {}, const std::vector<KeyedFreak>& freaks = {})
 {
     TracksResult res;
     if (tracks.empty() || ! mix.valid) return res;
@@ -274,6 +280,60 @@ inline TracksResult planTracks (const Features& mix, const GenreProfile& g, std:
         const float achieved = (float) (10.0 * std::log10 (after / tot[(size_t) b]));
         const float left = W - achieved;
         res.residualEq[(size_t) b] = std::abs (left) >= 1.0f ? std::round (left * 10.0f) / 10.0f : 0.0f;
+    }
+
+    // 2b) UNMASK: the loser makes a pocket where the winner lives. A Freak keyed by the vocal does it only
+    //     while the vocal sings; until it's there (and hears its key), the Servant makes a smaller fixed one.
+    //     The winner keeps its own range: no tone cut there.
+    {
+        res.unmask = findMasking (tracks, c, gains, seriesOk);
+        std::set<int> touched;
+        for (auto& u : res.unmask)
+        {
+            auto& p = plans[u.loser];
+            const auto& d = bandDefs()[(size_t) u.band];
+            bool covered = false;
+            juce::String by;
+            if (u.owner == Owner::leadVocal)
+                for (auto& f : freaks) if (f.keyHeard && freakCovers (f.track, tracks[u.loser])) { covered = true; by = f.track; }
+            touched.insert (u.band);
+            if (covered)
+            {
+                p.why.add ("UNMASK " + juce::String (d.label) + ": " + overlapText (u) + ". The Freak on " + by + " cuts it "
+                           + juce::String (juce::roundToInt (u.depth)) + " dB only while the vocal sings.");
+                continue;
+            }
+            const float before = p.eq[(size_t) u.band];
+            const float after = std::max (-6.0f, before - u.staticDepth);
+            if (after > before - 0.25f) continue;   // already cut as far as it goes
+            p.eq[(size_t) u.band] = std::round (after * 10.0f) / 10.0f;
+            const auto tag = juce::String (d.label) + " ";
+            for (int w = p.why.size(); --w >= 0;) if (p.why[w].startsWith (tag)) p.why.remove (w);
+            p.why.add (juce::String (d.label) + " " + juce::String (p.eq[(size_t) u.band], 1) + " dB" + (before <= -0.5f ? " (" + juce::String (before, 1) + " for the tone, the rest to unmask)" : juce::String())
+                       + ": UNMASK, room for " + ownerName (u.owner) + ": " + overlapText (u) + "."
+                       + (u.owner == Owner::leadVocal ? " The Freak on this track, with the vocal on its sidechain, would cut it only while the vocal sings." : juce::String()));
+        }
+        // the winner keeps its own range
+        for (auto& u : res.unmask)
+            for (size_t i = 0; i < n; ++i)
+            {
+                if (ownerOf (plans[i].role) != u.owner || plans[i].eq[(size_t) u.band] >= 0.0f) continue;
+                plans[i].eq[(size_t) u.band] = 0.0f;
+                const auto tag = juce::String (bandDefs()[(size_t) u.band].label) + " ";
+                for (int w = plans[i].why.size(); --w >= 0;) if (plans[i].why[w].startsWith (tag)) plans[i].why.remove (w);
+                plans[i].why.add (tag + "left alone: it's this track's own range. The tracks that hide it make room instead (UNMASK).");
+            }
+        // what the tracks achieved now; The Master's EQ only finishes the tone move, never undoes a pocket
+        for (auto b : touched)
+        {
+            const float W = want[(size_t) b];
+            if (std::abs (W) < 0.5f || tot[(size_t) b] <= 0) { res.residualEq[(size_t) b] = 0.0f; continue; }
+            double after = 0;
+            for (size_t i = 0; i < n; ++i) after += c[i][(size_t) b] * std::pow (10.0, plans[i].eq[(size_t) b] / 10.0);
+            const float left = W - (float) (10.0 * std::log10 (after / tot[(size_t) b]));
+            const float r = W < 0 ? std::min (0.0f, left) : std::max (0.0f, left);
+            res.residualEq[(size_t) b] = std::abs (r) >= 1.0f ? std::round (r * 10.0f) / 10.0f : 0.0f;
+        }
     }
 
     // 3) balance, in 500 Hz - 4 kHz. Two questions, answered together so the moves don't stack:
